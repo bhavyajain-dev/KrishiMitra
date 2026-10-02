@@ -154,13 +154,15 @@ def auth_register(request):
 @api_view(['POST'])
 @permission_classes([permissions.AllowAny])
 def auth_login(request):
-    """Login with email + password. Returns { token, user }."""
-    email = (request.data.get('email') or '').strip().lower()
+    """Login with email or username + password. Returns { token, user }."""
+    identifier = (request.data.get('email') or request.data.get('username') or '').strip().lower()
     password = request.data.get('password', '')
 
-    try:
-        user_obj = User.objects.get(email=email)
-    except User.DoesNotExist:
+    if not identifier or not password:
+        return Response({'message': 'Email and password are required.'}, status=400)
+
+    user_obj = User.objects.filter(email=identifier).first() or User.objects.filter(username=identifier).first()
+    if not user_obj:
         return Response({'message': 'Invalid email or password.'}, status=401)
 
     user = authenticate(request, username=user_obj.username, password=password)
@@ -177,6 +179,117 @@ def auth_login(request):
     token = get_tokens_for_user(user)
     serializer = UserSerializer(user)
     return Response({'token': token, 'user': serializer.data})
+
+
+@api_view(['POST'])
+@permission_classes([permissions.AllowAny])
+def auth_google(request):
+    """
+    Authenticate or register a user via Google OAuth (ID token or Access token).
+    Accepts { credential: str } or { idToken: str } or { accessToken: str } or { token: str }.
+    Validates token securely against Google's servers.
+    """
+    credential = request.data.get('credential') or request.data.get('idToken')
+    access_token = request.data.get('accessToken') or request.data.get('access_token')
+    raw_token = request.data.get('token')
+
+    if not credential and not access_token and not raw_token:
+        return Response({'message': 'Google credential or access token is required.'}, status=400)
+
+    client_id = getattr(settings, 'GOOGLE_CLIENT_ID', '') or os.getenv('GOOGLE_CLIENT_ID', '')
+
+    google_id = None
+    email = None
+    first_name = ""
+    last_name = ""
+    avatar_url = ""
+    email_verified = False
+
+    # 1. If Access Token is provided (from GIS useGoogleLogin popup flow)
+    if access_token:
+        try:
+            resp = requests.get(
+                'https://www.googleapis.com/oauth2/v3/userinfo',
+                headers={'Authorization': f'Bearer {access_token}'},
+                timeout=10
+            )
+            if resp.status_code != 200:
+                logger.error("Google userinfo API failed with status %s: %s", resp.status_code, resp.text)
+                return Response({'message': 'Invalid Google access token.'}, status=400)
+
+            userinfo = resp.json()
+            google_id = userinfo.get('sub')
+            email = (userinfo.get('email') or '').strip().lower()
+            first_name = userinfo.get('given_name') or (userinfo.get('name', '').split(' ')[0] if userinfo.get('name') else '')
+            last_name = userinfo.get('family_name') or ''
+            avatar_url = userinfo.get('picture') or ''
+            email_verified = userinfo.get('email_verified', False)
+        except Exception as e:
+            logger.error("Error verifying Google access token: %s", e)
+            return Response({'message': 'Failed to verify Google access token.'}, status=400)
+
+    # 2. If ID Token / Credential is provided
+    else:
+        token_to_verify = credential or raw_token
+        try:
+            from google.oauth2 import id_token
+            from google.auth.transport import requests as google_requests
+
+            idinfo = id_token.verify_oauth2_token(
+                token_to_verify,
+                google_requests.Request(),
+                client_id if client_id else None
+            )
+
+            google_id = idinfo.get('sub')
+            email = (idinfo.get('email') or '').strip().lower()
+            first_name = idinfo.get('given_name') or (idinfo.get('name', '').split(' ')[0] if idinfo.get('name') else '')
+            last_name = idinfo.get('family_name') or ''
+            avatar_url = idinfo.get('picture') or ''
+            email_verified = idinfo.get('email_verified', False)
+        except ValueError as e:
+            logger.error("Google token verification failed: %s", e)
+            return Response({'message': 'Invalid Google token.'}, status=400)
+        except Exception as e:
+            logger.error("Google auth exception: %s", e)
+            return Response({'message': f'Google authentication failed: {str(e)}'}, status=500)
+
+    if not email:
+        return Response({'message': 'Unable to retrieve email from Google token.'}, status=400)
+
+    user = User.objects.filter(googleId=google_id).first() if google_id else None
+    if not user:
+        user = User.objects.filter(email=email).first()
+        if user:
+            if google_id:
+                user.googleId = google_id
+            if not user.isVerified and email_verified:
+                user.isVerified = True
+            if avatar_url and not user.avatarUrl:
+                user.avatarUrl = avatar_url
+            user.save()
+        else:
+            import random
+            import string
+            random_phone = ''.join(random.choices(string.digits, k=10))
+            user = User.objects.create(
+                username=email,
+                email=email,
+                first_name=first_name,
+                last_name=last_name,
+                phone=random_phone,
+                googleId=google_id,
+                avatarUrl=avatar_url,
+                role='farmer',
+                farmingMode='moderate',
+                isVerified=True,
+            )
+            user.set_unusable_password()
+            user.save()
+
+    token = get_tokens_for_user(user)
+    serializer = UserSerializer(user)
+    return Response({'token': token, 'user': serializer.data}, status=200)
 
 
 @api_view(['GET'])
@@ -376,20 +489,20 @@ def auth_verify_otp(request):
 @api_view(['POST'])
 @permission_classes([permissions.AllowAny])
 def auth_check_exists(request):
-    email = (request.data.get('email') or '').strip().lower()
+    identifier = (request.data.get('email') or request.data.get('username') or '').strip().lower()
     phone = (request.data.get('phone') or '').strip()
     
-    if not email and not phone:
-        return Response({'message': 'Email or phone is required.'}, status=400)
+    if not identifier and not phone:
+        return Response({'message': 'Email, username, or phone is required.'}, status=400)
 
-    user_by_email = User.objects.filter(email=email).first() if email else None
+    user_by_identifier = (User.objects.filter(email=identifier).first() or User.objects.filter(username=identifier).first()) if identifier else None
     user_by_phone = User.objects.filter(phone=phone).first() if phone else None
-    user = user_by_email or user_by_phone
+    user = user_by_identifier or user_by_phone
     exists = bool(user)
 
     return Response({
         'exists': exists,
-        'email': email,
+        'email': user.email if user else identifier,
         'hasPassword': bool(user and user.has_usable_password()) if exists else False,
         'isVerified': bool(user and user.isVerified) if exists else False,
         'firstName': user.first_name if user else '',

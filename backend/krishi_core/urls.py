@@ -31,6 +31,9 @@ urlpatterns = [
     # OTP Login
     path('auth/otp/request', views.auth_request_otp, name='auth_request_otp'),
     path('auth/otp/verify', views.auth_verify_otp, name='auth_verify_otp'),
+    
+    # Google OAuth
+    path('auth/google', views.auth_google, name='auth_google'),
     path('soil-reports', views.soil_reports, name='soil_reports'),
     
     # Weather cache

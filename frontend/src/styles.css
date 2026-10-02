@@ -78,29 +78,40 @@
 :root {
   --radius: 0.5rem;
 
-  /* Theme Palette (Light) */
-  --background: #FFFDF7;
+  /* Theme Palette (Light Mode: Structured 5-Level Surface Hierarchy) */
+  /* Level 1: Page Canvas */
+  --background: #F7F9F5;
+  /* Level 2: Main Surface / Elevated Card */
   --surface: #FFFFFF;
-  --surface-2: #F7FAF4;
-  --surface-3: #FFFFFF;
-  --border: #E3EADD;
-  --text-primary: #1C231B;
-  --text-secondary: #4F5B4A;
-  --text-faint: #8A9486;
-  --primary: #3F6D46;
-  --primary-hover: #2E5133;
-  --secondary-green: #DDEBDE;
-  --accent-gold: #D3A34A;
-  --warning: #D58A2A;
+  /* Level 3: Secondary Surface / Inset Card / Section */
+  --surface-2: #EDF3EB;
+  /* Level 4: Tertiary / Interactive Surface */
+  --surface-3: #E1ECE0;
+  
+  /* Borders & Dividers */
+  --border: #D2DEC8;
+  --border-strong: #B8CBB0;
+  
+  /* Text & Typography (High Contrast WCAG AA/AAA compliant) */
+  --text-primary: #142013;
+  --text-secondary: #3E4E3B;
+  --text-faint: #6A7B67;
+  
+  /* Brand Emerald Primary */
+  --primary: #2D6A35;
+  --primary-hover: #215127;
+  --secondary-green: #E2EFE0;
+  --accent-gold: #B88728;
+  --warning: #C2781E;
   --warning-foreground: #FFFFFF;
-  --error: #C95C52;
-  --water-blue: #7DA7B4;
-  --sidebar: #F5F8F1;
+  --error: #C0483E;
+  --water-blue: #4A8C9E;
+  --sidebar: #EDF3EB;
   
   /* Graph & Progress specific */
-  --track: #D9E5D6;
-  --grid-lines: #EAF2E8;
-  --axis-text: #6B7C66;
+  --track: #D4E1D0;
+  --grid-lines: #E2ECE0;
+  --axis-text: #5A6D56;
 
   /* Standard mappings */
   --foreground: var(--text-primary);
@@ -138,25 +149,26 @@
   --sidebar-ring: var(--primary);
 
   /* Effects */
-  --gradient-hero: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(78, 111, 67, 0.08), transparent 70%);
-  --gradient-panel: linear-gradient(135deg, rgba(63, 109, 70, 0.02), rgba(63, 109, 70, 0.04));
+  --gradient-hero: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(45, 106, 53, 0.10), transparent 70%);
+  --gradient-panel: linear-gradient(135deg, rgba(45, 106, 53, 0.03), rgba(45, 106, 53, 0.06));
   --gradient-emerald: linear-gradient(135deg, var(--primary), var(--primary-hover));
-  --shadow-glow: 0 0 30px -5px rgba(78, 111, 67, 0.2);
-  --shadow-card: 0 4px 14px -4px rgba(63, 109, 70, 0.08);
-  --shadow-deep: 0 10px 25px -10px rgba(63, 109, 70, 0.12);
-  --glass-bg: rgba(255, 255, 255, 0.75);
-  --glass-bg-strong: rgba(255, 255, 255, 0.95);
-  --glass-border: rgba(255, 255, 255, 0.5);
-  --glass-border-strong: rgba(255, 255, 255, 0.8);
+  --shadow-glow: 0 0 28px -4px rgba(45, 106, 53, 0.20);
+  --shadow-card: 0 2px 8px -2px rgba(28, 48, 30, 0.06), 0 8px 24px -4px rgba(28, 48, 30, 0.08);
+  --shadow-deep: 0 12px 32px -6px rgba(28, 48, 30, 0.14);
+  --glass-bg: rgba(255, 255, 255, 0.88);
+  --glass-bg-strong: rgba(255, 255, 255, 0.97);
+  --glass-border: rgba(38, 66, 42, 0.14);
+  --glass-border-strong: rgba(38, 66, 42, 0.22);
 }
 
 .dark {
-  /* Theme Palette (Dark) */
+  /* Theme Palette (Dark Mode: Deep Obsidian & Emerald) */
   --background: #121511;
   --surface: #1A1F1A;
   --surface-2: #232A23;
   --surface-3: #2A332A;
   --border: #31382F;
+  --border-strong: #454F42;
   --text-primary: #E8ECE4;
   --text-secondary: #A4AEA0;
   --text-faint: #7D897A;
@@ -180,10 +192,10 @@
   --shadow-glow: 0 0 30px -5px rgba(120, 166, 90, 0.25);
   --shadow-card: 0 8px 24px -8px rgba(0, 0, 0, 0.5);
   --shadow-deep: 0 20px 40px -15px rgba(0, 0, 0, 0.7);
-  --glass-bg: rgba(10, 13, 10, 0.4);
-  --glass-bg-strong: rgba(10, 13, 10, 0.7);
-  --glass-border: rgba(255, 255, 255, 0.08);
-  --glass-border-strong: rgba(255, 255, 255, 0.12);
+  --glass-bg: rgba(18, 24, 18, 0.65);
+  --glass-bg-strong: rgba(18, 24, 18, 0.85);
+  --glass-border: rgba(255, 255, 255, 0.09);
+  --glass-border-strong: rgba(255, 255, 255, 0.14);
 }
 
 @layer base {
@@ -369,8 +381,8 @@ input:-webkit-autofill,
 input:-webkit-autofill:hover,
 input:-webkit-autofill:focus,
 input:-webkit-autofill:active {
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: #ffffff;
+  -webkit-text-fill-color: var(--color-foreground) !important;
+  color: var(--color-foreground) !important;
   transition: background-color 5000s ease-in-out 0s;
   box-shadow: inset 0 0 20px 20px transparent;
 }

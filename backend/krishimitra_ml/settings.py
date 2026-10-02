@@ -155,6 +155,9 @@ BREVO_API_KEY = os.getenv("BREVO_API_KEY", "")
 BREVO_SENDER_EMAIL = os.getenv("BREVO_SENDER_EMAIL", os.getenv("EMAIL_HOST_USER", "noreply@krishimitra.com"))
 BREVO_SENDER_NAME = os.getenv("BREVO_SENDER_NAME", "KrishiMitra")
 
+# ── Google OAuth Configuration ────────────────────────────────────────
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
+
 # ── Scheduler / Background Tasks Guard ─────────────────────────────────
 # Render free instances spin down after inactivity; default scheduler to disabled.
 ENABLE_SCHEDULER = os.getenv("ENABLE_SCHEDULER", "0") == "1"

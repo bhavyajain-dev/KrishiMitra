@@ -71,6 +71,12 @@ class EmailService:
                 return True, "Email sent successfully via SMTP."
             except Exception as exc:
                 logger.error("SMTP send_mail failed: %s", exc)
+                if getattr(settings, "DEBUG", False):
+                    logger.warning(
+                        "[DEV EMAIL FALLBACK] SMTP failed in DEBUG mode. Recipient: %s | Subject: %s\nText preview: %s",
+                        to_email, subject, text_content[:120] if text_content else "(HTML only)"
+                    )
+                    return True, "Email logged to console (SMTP fallback in dev mode)."
                 return False, f"SMTP send failed: {exc}"
 
         # 3. Development / Headless Console Fallback (neither Brevo nor SMTP configured)
