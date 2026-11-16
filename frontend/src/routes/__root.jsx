@@ -14,6 +14,7 @@ import { reportLovableError } from "../lib/lovable-error-reporting";
 import { ThemeProvider } from "../components/theme-provider";
 import { AppDataProvider } from "../lib/AppDataContext";
 import { Toaster } from "../components/ui/sonner";
+import { GoogleOAuthProvider } from "@react-oauth/google";
 
 function NotFoundComponent() {
   return (
@@ -147,16 +148,27 @@ function RootShell({ children }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+
+  const content = (
+    <ThemeProvider defaultTheme="system" storageKey="krishmitra-theme">
+      <AppDataProvider>
+        {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+        <Outlet />
+        <Toaster position="bottom-right" richColors />
+      </AppDataProvider>
+    </ThemeProvider>
+  );
 
   return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider defaultTheme="system" storageKey="krishmitra-theme">
-        <AppDataProvider>
-          {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-          <Outlet />
-          <Toaster position="bottom-right" richColors />
-        </AppDataProvider>
-      </ThemeProvider>
+      {googleClientId ? (
+        <GoogleOAuthProvider clientId={googleClientId}>
+          {content}
+        </GoogleOAuthProvider>
+      ) : (
+        content
+      )}
     </QueryClientProvider>
   );
 }

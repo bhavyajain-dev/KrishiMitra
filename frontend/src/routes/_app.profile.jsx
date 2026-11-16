@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
-import { Leaf, MapPin, Pencil, Save, Scale, Wind, Lock, LogOut, ShieldCheck, User } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Leaf, MapPin, Pencil, Save, Scale, Wind, Lock, LogOut, ShieldCheck, User, KeyRound, Eye, EyeOff } from "lucide-react";
 import { useAppData } from "@/lib/AppDataContext";
 import { PageHeader } from "@/components/app/AppShell";
 import { toast } from "sonner";
@@ -58,6 +58,31 @@ function ProfileSettingsPage() {
     newPassword: "",
     confirmPassword: "",
   });
+  const [showOldPassword, setShowOldPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  // Security OTP Recovery State (for users who forgot current password or signed in via Google)
+  const [securityTab, setSecurityTab] = useState("password"); // "password" | "otp-reset"
+  const [otpStep, setOtpStep] = useState("request"); // "request" | "verify"
+  const [otpCode, setOtpCode] = useState("");
+  const [otpNewPassword, setOtpNewPassword] = useState("");
+  const [otpConfirmPassword, setOtpConfirmPassword] = useState("");
+  const [showOtpNewPassword, setShowOtpNewPassword] = useState(false);
+  const [showOtpConfirmPassword, setShowOtpConfirmPassword] = useState(false);
+  const [isSendingOtp, setIsSendingOtp] = useState(false);
+  const [isResettingWithOtp, setIsResettingWithOtp] = useState(false);
+  const [otpCooldown, setOtpCooldown] = useState(0);
+
+  const API_URL = import.meta.env.VITE_API_URL || (typeof window !== "undefined" ? `http://${window.location.hostname}:5001/api` : "http://localhost:5001/api");
+
+  useEffect(() => {
+    if (otpCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setOtpCooldown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [otpCooldown]);
 
   const initials = userProfile?.name
     ? userProfile.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()
@@ -129,6 +154,83 @@ function ProfileSettingsPage() {
       toast.error("An error occurred.");
     } finally {
       setIsChangingPassword(false);
+    }
+  };
+
+  const handleRequestOtp = async () => {
+    if (otpCooldown > 0 || isSendingOtp) return;
+    const email = userProfile?.email;
+    if (!email) {
+      toast.error("No registered email address found for your profile.");
+      return;
+    }
+    setIsSendingOtp(true);
+    try {
+      const res = await fetch(`${API_URL}/auth/forgot-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (res.status === 429 && data.retryAfter) {
+          setOtpCooldown(data.retryAfter);
+          setOtpStep("verify");
+          toast.warning(data.message || `Please wait ${data.retryAfter}s before requesting a new code.`);
+          return;
+        }
+        throw new Error(data.message || "Failed to send verification code.");
+      }
+      setOtpCooldown(60);
+      setOtpStep("verify");
+      toast.success(data.message || "Verification code sent to your registered email.");
+    } catch (err) {
+      toast.error(err.message || "Failed to send verification code.");
+    } finally {
+      setIsSendingOtp(false);
+    }
+  };
+
+  const handleResetWithOtp = async (e) => {
+    e.preventDefault();
+    const code = otpCode.trim();
+    if (!code || code.length < 6) {
+      toast.error("Please enter the complete 6-digit verification code.");
+      return;
+    }
+    if (!otpNewPassword || otpNewPassword.length < 6) {
+      toast.error("New password must be at least 6 characters.");
+      return;
+    }
+    if (otpNewPassword !== otpConfirmPassword) {
+      toast.error("Passwords do not match.");
+      return;
+    }
+    setIsResettingWithOtp(true);
+    try {
+      const res = await fetch(`${API_URL}/auth/reset-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: userProfile?.email,
+          otp: code,
+          newPassword: otpNewPassword,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || "Failed to reset password.");
+      }
+      toast.success(data.message || "Password updated successfully!");
+      setOtpCode("");
+      setOtpNewPassword("");
+      setOtpConfirmPassword("");
+      setSecurityTab("password");
+      setOtpStep("request");
+    } catch (err) {
+      toast.error(err.message || "Invalid or expired verification code.");
+    } finally {
+      setIsResettingWithOtp(false);
     }
   };
 
@@ -249,63 +351,250 @@ function ProfileSettingsPage() {
       <div className="grid gap-6 md:grid-cols-2">
         {/* Security Section */}
         <section className="glass rounded-3xl p-6 sm:p-8">
-          <div className="mb-6 flex items-center gap-2">
-            <ShieldCheck className="h-5 w-5 text-primary" />
-            <h2 className="font-display text-lg font-semibold">Security</h2>
+          <div className="mb-6 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5 text-primary" />
+              <h2 className="font-display text-lg font-semibold">Security</h2>
+            </div>
+            {/* Mode switch */}
+            <div className="flex items-center gap-1 rounded-xl border border-border bg-secondary/30 p-1 text-xs">
+              <button
+                type="button"
+                onClick={() => setSecurityTab("password")}
+                className={`rounded-lg px-2.5 py-1 font-medium transition-all ${
+                  securityTab === "password"
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Update
+              </button>
+              <button
+                type="button"
+                onClick={() => setSecurityTab("otp-reset")}
+                className={`rounded-lg px-2.5 py-1 font-medium transition-all ${
+                  securityTab === "otp-reset"
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Reset via OTP
+              </button>
+            </div>
           </div>
-          <form onSubmit={handleChangePassword} className="space-y-4">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">Current Password</label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <input
-                  type="password"
-                  required
-                  value={passwordForm.oldPassword}
-                  onChange={(e) => setPasswordForm({ ...passwordForm, oldPassword: e.target.value })}
-                  placeholder="••••••••"
-                  className="w-full rounded-xl border border-input bg-secondary/40 py-2.5 pl-10 pr-4 text-sm outline-none transition-colors focus:border-primary/50"
-                />
+
+          {securityTab === "password" ? (
+            <form onSubmit={handleChangePassword} className="space-y-4">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-medium text-muted-foreground">Current Password</label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSecurityTab("otp-reset");
+                      if (otpStep === "request") handleRequestOtp();
+                    }}
+                    className="text-xs text-primary hover:underline font-medium cursor-pointer"
+                  >
+                    Forgot current password?
+                  </button>
+                </div>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                  <input
+                    type={showOldPassword ? "text" : "password"}
+                    required
+                    value={passwordForm.oldPassword}
+                    onChange={(e) => setPasswordForm({ ...passwordForm, oldPassword: e.target.value })}
+                    placeholder="••••••••"
+                    className="w-full rounded-xl border border-input bg-secondary/40 py-2.5 pl-10 pr-10 text-sm outline-none transition-colors focus:border-primary/50"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowOldPassword(!showOldPassword)}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                    aria-label={showOldPassword ? "Hide password" : "Show password"}
+                  >
+                    {showOldPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
               </div>
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">New Password</label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <input
-                  type="password"
-                  required
-                  minLength={6}
-                  value={passwordForm.newPassword}
-                  onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
-                  placeholder="••••••••"
-                  className="w-full rounded-xl border border-input bg-secondary/40 py-2.5 pl-10 pr-4 text-sm outline-none transition-colors focus:border-primary/50"
-                />
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">New Password</label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                  <input
+                    type={showNewPassword ? "text" : "password"}
+                    required
+                    minLength={6}
+                    value={passwordForm.newPassword}
+                    onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+                    placeholder="••••••••"
+                    className="w-full rounded-xl border border-input bg-secondary/40 py-2.5 pl-10 pr-10 text-sm outline-none transition-colors focus:border-primary/50"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                    aria-label={showNewPassword ? "Hide password" : "Show password"}
+                  >
+                    {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
               </div>
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">Confirm New Password</label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <input
-                  type="password"
-                  required
-                  minLength={6}
-                  value={passwordForm.confirmPassword}
-                  onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
-                  placeholder="••••••••"
-                  className="w-full rounded-xl border border-input bg-secondary/40 py-2.5 pl-10 pr-4 text-sm outline-none transition-colors focus:border-primary/50"
-                />
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">Confirm New Password</label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                  <input
+                    type={showConfirmPassword ? "text" : "password"}
+                    required
+                    minLength={6}
+                    value={passwordForm.confirmPassword}
+                    onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
+                    placeholder="••••••••"
+                    className="w-full rounded-xl border border-input bg-secondary/40 py-2.5 pl-10 pr-10 text-sm outline-none transition-colors focus:border-primary/50"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                    aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                  >
+                    {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
               </div>
+              <button
+                type="submit"
+                disabled={isChangingPassword}
+                className="mt-2 w-full rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-transform hover:scale-[1.02] disabled:opacity-50"
+              >
+                {isChangingPassword ? "Updating..." : "Update Password"}
+              </button>
+            </form>
+          ) : (
+            <div className="space-y-4">
+              <div className="rounded-xl border border-primary/20 bg-primary/5 p-3.5 text-xs text-muted-foreground leading-relaxed">
+                Reset your password without your current password. We will send a 6-digit verification code to your registered email:{" "}
+                <strong className="text-foreground">{userProfile?.email || "your registered email"}</strong>.
+              </div>
+
+              {otpStep === "request" ? (
+                <div className="space-y-3 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleRequestOtp}
+                    disabled={isSendingOtp || otpCooldown > 0}
+                    className="w-full flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-transform hover:scale-[1.02] disabled:opacity-50 cursor-pointer"
+                  >
+                    {isSendingOtp ? "Sending code..." : otpCooldown > 0 ? `Wait ${otpCooldown}s to request code` : "Send Verification Code"}
+                  </button>
+                  <p className="text-center">
+                    <button
+                      type="button"
+                      onClick={() => setOtpStep("verify")}
+                      className="text-xs text-muted-foreground hover:text-foreground underline cursor-pointer"
+                    >
+                      Already have a code? Enter it here
+                    </button>
+                  </p>
+                </div>
+              ) : (
+                <form onSubmit={handleResetWithOtp} className="space-y-4">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-muted-foreground">6-Digit Verification Code</label>
+                    <div className="relative">
+                      <KeyRound className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        maxLength={6}
+                        required
+                        value={otpCode}
+                        onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
+                        placeholder="123456"
+                        className="w-full rounded-xl border border-input bg-secondary/40 py-2.5 pl-10 pr-4 text-sm font-mono tracking-widest outline-none transition-colors focus:border-primary/50"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-muted-foreground">New Password</label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                      <input
+                        type={showOtpNewPassword ? "text" : "password"}
+                        required
+                        minLength={6}
+                        value={otpNewPassword}
+                        onChange={(e) => setOtpNewPassword(e.target.value)}
+                        placeholder="••••••••"
+                        className="w-full rounded-xl border border-input bg-secondary/40 py-2.5 pl-10 pr-10 text-sm outline-none transition-colors focus:border-primary/50"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowOtpNewPassword(!showOtpNewPassword)}
+                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                        aria-label={showOtpNewPassword ? "Hide password" : "Show password"}
+                      >
+                        {showOtpNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-muted-foreground">Confirm New Password</label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                      <input
+                        type={showOtpConfirmPassword ? "text" : "password"}
+                        required
+                        minLength={6}
+                        value={otpConfirmPassword}
+                        onChange={(e) => setOtpConfirmPassword(e.target.value)}
+                        placeholder="••••••••"
+                        className="w-full rounded-xl border border-input bg-secondary/40 py-2.5 pl-10 pr-10 text-sm outline-none transition-colors focus:border-primary/50"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowOtpConfirmPassword(!showOtpConfirmPassword)}
+                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                        aria-label={showOtpConfirmPassword ? "Hide password" : "Show password"}
+                      >
+                        {showOtpConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isResettingWithOtp || otpCode.length < 6}
+                    className="w-full rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-transform hover:scale-[1.02] disabled:opacity-50 cursor-pointer"
+                  >
+                    {isResettingWithOtp ? "Resetting Password..." : "Reset Password"}
+                  </button>
+
+                  <div className="flex items-center justify-between pt-2 text-xs">
+                    <button
+                      type="button"
+                      onClick={handleRequestOtp}
+                      disabled={otpCooldown > 0 || isSendingOtp}
+                      className="font-medium text-primary hover:underline disabled:opacity-50 disabled:no-underline cursor-pointer"
+                    >
+                      {otpCooldown > 0 ? `Resend code (${otpCooldown}s)` : "Resend code"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setSecurityTab("password"); setOtpStep("request"); }}
+                      className="text-muted-foreground hover:text-foreground cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              )}
             </div>
-            <button
-              type="submit"
-              disabled={isChangingPassword}
-              className="mt-2 w-full rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-transform hover:scale-[1.02]"
-            >
-              {isChangingPassword ? "Updating..." : "Update Password"}
-            </button>
-          </form>
+          )}
         </section>
 
         {/* Danger Zone Section */}

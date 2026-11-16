@@ -39,14 +39,24 @@ function Landing() {
     <div className="min-h-screen bg-background text-foreground font-sans selection:bg-primary/30">
       
       {/* Navbar */}
-      <header className="fixed top-6 left-1/2 -translate-x-1/2 z-50 w-[90%] max-w-5xl rounded-full glass border border-foreground/10 px-6 py-3 flex items-center justify-between shadow-2xl">
+      <header className="fixed top-4 sm:top-6 left-1/2 -translate-x-1/2 z-50 w-[95%] sm:w-[90%] max-w-5xl rounded-full glass border border-foreground/10 px-3.5 sm:px-6 py-2 sm:py-3 flex items-center justify-between shadow-2xl">
         <BrandMark />
-        {/* Removed broken nav links to keep header clean and functional */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-1.5 xs:gap-2.5 sm:gap-4 shrink-0">
           <ThemeToggle />
-          <Link to="/auth" className="text-sm font-medium text-foreground hover:text-primary transition-colors">Log in</Link>
-          <Link to="/auth" className="rounded-full bg-primary/20 text-primary border border-primary/50 px-5 py-2 text-sm font-bold transition-all hover:bg-primary hover:text-background hover:glow-emerald">
-            Get Started <ChevronRight className="inline h-4 w-4 ml-1" />
+          <Link
+            to="/auth"
+            search={{ mode: "login" }}
+            className="text-xs sm:text-sm font-medium text-foreground hover:text-primary transition-colors whitespace-nowrap px-1.5 py-1"
+          >
+            Log in
+          </Link>
+          <Link
+            to="/auth"
+            search={{ mode: "signup" }}
+            className="rounded-full bg-primary/20 text-primary border border-primary/50 px-3 py-1.5 sm:px-5 sm:py-2 text-xs sm:text-sm font-bold transition-all hover:bg-primary hover:text-background hover:glow-emerald whitespace-nowrap inline-flex items-center shrink-0"
+          >
+            <span>Get Started</span>
+            <ChevronRight className="inline h-3.5 w-3.5 sm:h-4 sm:w-4 ml-0.5 sm:ml-1 shrink-0" />
           </Link>
         </div>
       </header>

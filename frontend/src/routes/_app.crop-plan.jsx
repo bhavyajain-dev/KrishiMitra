@@ -11,9 +11,45 @@ import { subscribeAiSyncRefresh } from "@/lib/aiSyncEvents";
 import { CurrentStageCard } from "@/components/crop-plan/CurrentStageCard";
 import { PlanSummaryCard } from "@/components/crop-plan/PlanSummaryCard";
 import { VerticalTimeline } from "@/components/crop-plan/VerticalTimeline";
+import { AiFarmAdvisor } from "@/components/crop-plan/AiFarmAdvisor";
+import { setAiHandoff } from "@/lib/aiHandoff";
 
 
 const API_URL = import.meta.env.VITE_API_URL || (typeof window !== "undefined" ? `http://${window.location.hostname}:5001/api` : "http://localhost:5001/api");
+
+const getAgronomicSeasonAdvisory = (cropName, sowingDateStr) => {
+  if (!cropName || !sowingDateStr) return null;
+  const d = new Date(sowingDateStr);
+  if (isNaN(d.getTime())) return null;
+  const month = d.getMonth() + 1; // 1-12
+  const crop = cropName.toLowerCase();
+
+  // Kharif crops (Soybean, Cotton, Rice/Paddy, Maize, Groundnut, Bajra)
+  const kharifCrops = ["soybean", "cotton", "rice", "paddy", "maize", "groundnut", "bajra", "jowar", "tur", "pigeonpea"];
+  if (kharifCrops.some(c => crop.includes(c))) {
+    if (month < 5 || month > 8) {
+      return `${cropName} is typically sown in Kharif (June–July). Sowing in month ${month} may face unconventional monsoon and temperature patterns.`;
+    }
+  }
+
+  // Rabi crops (Wheat, Mustard, Gram/Chickpea, Barley)
+  const rabiCrops = ["wheat", "mustard", "gram", "chickpea", "barley", "potato", "pea"];
+  if (rabiCrops.some(c => crop.includes(c))) {
+    if (month < 9 || month > 12) {
+      return `${cropName} is typically sown in Rabi (October–December). Sowing in month ${month} may face elevated heat stress during germination.`;
+    }
+  }
+
+  // Zaid crops (Watermelon, Cucumber, Muskmelon)
+  const zaidCrops = ["watermelon", "cucumber", "muskmelon", "pumpkin", "moong"];
+  if (zaidCrops.some(c => crop.includes(c))) {
+    if (month < 2 || month > 4) {
+      return `${cropName} is typically cultivated in summer (February–April).`;
+    }
+  }
+
+  return null;
+};
 
 export const Route = createFileRoute("/_app/crop-plan")({
   validateSearch: (search) => ({
@@ -552,30 +588,74 @@ function CropPlanPage() {
     );
   }
 
+  const handleConsultAiMitra = () => {
+    if (!activePlan) return;
+    const planCrop = activePlan.cropName || "Crop";
+    const planVariety = activePlan.variety ? ` (${activePlan.variety})` : "";
+    const currentStageName = activeStage?.stage || "Current stage";
+    const farmName = activeFarm?.name || "Farm";
+    const farmSoil = activeFarm?.soilType || "Not specified";
+    const farmWater = activeFarm?.waterResources?.length > 0 ? activeFarm.waterResources.join(", ") : "Rainfed";
+    const farmArea = activePlan.areaAcres || activeFarm?.areaAcres || "—";
+
+    const prompt = `I need agronomist guidance on my current crop plan:
+- Crop: ${planCrop}${planVariety}
+- Farm: ${farmName} (Soil: ${farmSoil}, Water: ${farmWater}, Area: ${farmArea} acres)
+- Timeline: Day ${currentDay} of ${durationDays} (Sown on ${sowingDate})
+- Current Growth Stage: ${currentStageName}${activeStage?.window ? ` (${activeStage.window})` : ""} · Stage Progress: ${stageProgress}%
+
+Please analyze this stage of growth and provide actionable advice on:
+1. Critical irrigation, nutrition, and fertilizer management needed right now.
+2. Common pests, diseases, or weeds to watch out for during this stage and preventive measures.
+3. Upcoming tasks or milestone preparations for the next stage.`;
+
+    setAiHandoff({
+      source: "crop-plan",
+      taskName: "Crop Plan",
+      actionLabel: "Reviewing Crop Plan",
+      completedLabel: "Crop plan review complete",
+      contextTitle: `Crop Plan: ${planCrop}`,
+      prompt,
+      metadata: {
+        cropName: planCrop,
+        variety: activePlan.variety,
+        currentDay,
+        durationDays,
+        stage: currentStageName,
+        farm: farmName,
+      },
+    });
+
+    navigate({ to: "/ai-mitra" });
+  };
+
   return (
     <div>
       <PageHeader
         title={`Crop Plan${activePlan ? ` — ${cropName}` : ""}`}
         subtitle={activePlan ? `Sown ${sowingDate} · Day ${currentDay} of ${durationDays}` : "Generate an AI-powered crop schedule for your farm"}
         action={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
             <FarmSwitcher />
 
             {activePlan && (
               <button
                 onClick={handleDropPlan}
                 disabled={isDropping}
-                className="flex items-center gap-1.5 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-2 text-xs font-semibold text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-60"
+                className="flex items-center gap-1.5 rounded-xl border border-destructive/30 bg-destructive/5 px-2.5 sm:px-4 py-2 text-xs font-semibold text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-60 cursor-pointer"
                 title="Drop this crop plan and its daily tasks, then grow a new crop instead."
               >
-                {isDropping ? "Dropping..." : "Drop Plan & Grow New Crop"}
+                <span className="sm:hidden">Drop Plan</span>
+                <span className="hidden sm:inline">Drop Plan & Grow New Crop</span>
               </button>
             )}
             <button
               onClick={() => setIsAiModalOpen(true)}
-              className="flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground shadow-[0_0_24px_-8px_var(--color-primary)] transition-transform hover:scale-[1.03]"
+              className="flex items-center gap-1.5 rounded-xl bg-primary px-3 sm:px-4 py-2 text-xs font-semibold text-primary-foreground shadow-[0_0_24px_-8px_var(--color-primary)] transition-transform hover:scale-[1.03] cursor-pointer"
             >
-              <Sparkles className="h-3.5 w-3.5" /> Generate Plan with AI
+              <Sparkles className="h-3.5 w-3.5" />
+              <span className="sm:hidden">AI Plan</span>
+              <span className="hidden sm:inline">Generate Plan with AI</span>
             </button>
           </div>
         }
@@ -741,12 +821,21 @@ function CropPlanPage() {
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">Sowing Date</label>
                 <input 
                   type="date" 
-                  min={new Date().toISOString().split("T")[0]}
+                  min={`${new Date().getFullYear() - 1}-01-01`}
+                  max={`${new Date().getFullYear() + 2}-12-31`}
                   value={(previewPlan.sowing_date || previewPlan.cropPlan?.sowingDate || previewPlan.sowingDate || "").split("T")[0]} 
                   onChange={e => {
                     const newSowingDateStr = e.target.value;
                     const oldSowingDateStr = (previewPlan.sowing_date || previewPlan.cropPlan?.sowingDate || previewPlan.sowingDate || "").split("T")[0];
                     if (!newSowingDateStr || !oldSowingDateStr) return;
+
+                    const parts = newSowingDateStr.split("-");
+                    const year = parseInt(parts[0], 10);
+                    const curYear = new Date().getFullYear();
+                    if (isNaN(year) || year < 2020 || year > curYear + 2) {
+                      toast.error(`Please enter a valid agricultural year between 2020 and ${curYear + 2}`);
+                      return;
+                    }
 
                     const diffMs = new Date(newSowingDateStr) - new Date(oldSowingDateStr);
                     const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
@@ -785,6 +874,20 @@ function CropPlanPage() {
                   className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none" 
                 />
               </div>
+
+              {/* Sowing window advisory */}
+              {(() => {
+                const pCrop = previewPlan.crop || previewPlan.cropPlan?.cropName || previewPlan.cropName || "";
+                const pDate = (previewPlan.sowing_date || previewPlan.cropPlan?.sowingDate || previewPlan.sowingDate || "").split("T")[0];
+                const advisory = getAgronomicSeasonAdvisory(pCrop, pDate);
+                if (!advisory) return null;
+                return (
+                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-300 flex items-start gap-2.5">
+                    <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                    <div className="leading-relaxed">{advisory}</div>
+                  </div>
+                );
+              })()}
               <div className="mt-6 flex flex-col gap-2">
                 <button onClick={() => handleSavePreview(true)} disabled={isSaving} className="w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-md hover:opacity-90 disabled:opacity-60">
                   {isSaving ? "Saving..." : "Replace Current Plan"}
@@ -858,6 +961,10 @@ function CropPlanPage() {
                 harvestDate={harvestDate}
                 farmName={activeFarm?.name}
                 advancedPredictions={advancedPredictions}
+              />
+              <AiFarmAdvisor
+                cropName={activePlan?.cropName}
+                onConsultAi={handleConsultAiMitra}
               />
             </div>
           </div>

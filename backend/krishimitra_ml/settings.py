@@ -18,11 +18,27 @@ load_dotenv(BASE_DIR / ".env")
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "dev-only-insecure-key-change-me")
 DEBUG = os.getenv("DJANGO_DEBUG", "1") == "1"
 
+render_hostname = os.getenv("RENDER_EXTERNAL_HOSTNAME")
+
 allowed_hosts_env = os.getenv("ALLOWED_HOSTS", "")
 if allowed_hosts_env:
     ALLOWED_HOSTS = [h.strip() for h in allowed_hosts_env.split(",") if h.strip()]
 else:
-    ALLOWED_HOSTS = ["*"] if DEBUG else []
+    ALLOWED_HOSTS = ["*"] if DEBUG else [".onrender.com", "localhost", "127.0.0.1"]
+
+if render_hostname and render_hostname not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(render_hostname)
+
+csrf_origins_env = os.getenv("CSRF_TRUSTED_ORIGINS", "")
+if csrf_origins_env:
+    CSRF_TRUSTED_ORIGINS = [o.strip() for o in csrf_origins_env.split(",") if o.strip()]
+else:
+    CSRF_TRUSTED_ORIGINS = ["https://*.onrender.com"] if not DEBUG else []
+
+if render_hostname:
+    https_origin = f"https://{render_hostname}"
+    if https_origin not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(https_origin)
 
 INSTALLED_APPS = [
     "django.contrib.contenttypes",
@@ -50,8 +66,10 @@ STORAGES = {
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
+    "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.middleware.common.CommonMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
 cors_origins_env = os.getenv("CORS_ALLOWED_ORIGINS", "")
@@ -122,7 +140,7 @@ AUTH_PASSWORD_VALIDATORS = [
     {
         "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
         "OPTIONS": {
-            "min_length": 6,
+            "min_length": 8,
         },
     },
     {
@@ -130,6 +148,9 @@ AUTH_PASSWORD_VALIDATORS = [
     },
     {
         "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
+    },
+    {
+        "NAME": "krishi_core.validators.ComplexityPasswordValidator",
     },
 ]
 
@@ -139,7 +160,7 @@ USE_TZ = True
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:1b")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-flash-latest")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-flash-lite-latest")
 CHROMA_DB_PATH = os.getenv("CHROMA_DB_PATH", str(BASE_DIR / "knowledge-base" / "chroma_db"))
 DISABLE_TENSORFLOW_IMPORT = os.getenv("DISABLE_TENSORFLOW_IMPORT", "0") == "1"
 # ── Email Settings for Forgot Password OTP (SMTP Fallback) ─────────────
@@ -149,6 +170,7 @@ EMAIL_PORT = int(os.environ.get('EMAIL_PORT', 587))
 EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'True').lower() in ['true', '1', 'yes']
 EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+EMAIL_TIMEOUT = int(os.environ.get('EMAIL_TIMEOUT', '5'))
 
 # ── Brevo Transactional Email Settings (HTTPS REST API over Port 443) ───
 BREVO_API_KEY = os.getenv("BREVO_API_KEY", "")

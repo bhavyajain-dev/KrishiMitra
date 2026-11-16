@@ -47,21 +47,30 @@ class LLMService:
         if gemini_key:
             try:
                 import time
-                gemini_model = getattr(settings, "GEMINI_MODEL", "gemini-flash-latest")
-                gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/{gemini_model}:generateContent?key={gemini_key}"
-                gemini_payload = {
-                    "contents": [{"parts": [{"text": prompt}]}]
-                }
+                configured_model = getattr(settings, "GEMINI_MODEL", "gemini-flash-lite-latest")
+                model_candidates = [configured_model]
+                for candidate in ["gemini-flash-lite-latest", "gemini-flash-latest", "gemini-pro-latest"]:
+                    if candidate not in model_candidates:
+                        model_candidates.append(candidate)
+
                 gemini_timeout = timeout or (5.0, 60.0)
                 res = None
-                for attempt in range(2):
-                    res = requests.post(gemini_url, json=gemini_payload, headers={"Content-Type": "application/json"}, timeout=gemini_timeout)
-                    if res.status_code == 200:
-                        break
-                    if res.status_code == 503 and attempt == 0:
-                        time.sleep(1.0)
+                for candidate_model in model_candidates:
+                    gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/{candidate_model}:generateContent?key={gemini_key}"
+                    gemini_payload = {
+                        "contents": [{"parts": [{"text": prompt}]}]
+                    }
+                    try:
+                        res = requests.post(gemini_url, json=gemini_payload, headers={"Content-Type": "application/json"}, timeout=gemini_timeout)
+                        if res.status_code == 200:
+                            break
+                        if res.status_code == 503:
+                            time.sleep(0.5)
+                            res = requests.post(gemini_url, json=gemini_payload, headers={"Content-Type": "application/json"}, timeout=gemini_timeout)
+                            if res.status_code == 200:
+                                break
+                    except Exception:
                         continue
-                    break
                 if res and res.status_code == 200:
                     candidates = res.json().get("candidates", [])
                     if candidates:

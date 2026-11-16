@@ -235,7 +235,7 @@ function Dashboard() {
       {/* Stat cards */}
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Total farms" value={String(farms.length)} hint={`${totalArea.toFixed(1)} acres · ${activeFarms} active`} tone="primary" bar={farms.length > 0 ? 100 : 0} />
-        <StatCard label="Crop plan progress" value={`${cropProgress}%`} hint={cropProgressHint} tone="cyan" bar={cropProgress} />
+        <StatCard label="Crop plan progress" value={`${cropProgress}%`} hint={cropPlan?.cropName ? `${cropPlan.cropName} · ${cropProgressHint}` : cropProgressHint} tone="cyan" bar={cropProgress} />
         <StatCard label="Active risk alerts" value={String(alerts.length)} hint={alerts.length > 0 ? `${alerts.filter(a => a.severity === "critical").length} critical` : "No alerts"} tone="warning" />
         <StatCard label="Active farm" value={activeFarm?.name?.split("—")[0]?.trim() || "None"} hint={activeFarm ? `${activeFarm.areaAcres} acres · ${activeFarm.soilType}` : "Select or add a farm"} tone="foreground" />
       </section>
@@ -321,7 +321,14 @@ function Dashboard() {
         </section>
 
         <section className="glass rounded-2xl p-5">
-          <h2 className="mb-4 font-display text-sm font-semibold">Crop plan progress</h2>
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="font-display text-sm font-semibold">Crop plan progress</h2>
+            {cropPlan?.cropName && (
+              <span className="rounded-lg bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
+                {cropPlan.cropName}
+              </span>
+            )}
+          </div>
           <div className="space-y-3">
             {stages.slice(0, 5).map((s) => (
               <div key={s._id || s.stage} className="flex items-center gap-3">

@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { AlertTriangle, BellRing, CheckCheck, CloudRain, Info, ShieldAlert, Sprout, Timer } from "lucide-react";
+import { AlertTriangle, BellRing, CheckCheck, CloudRain, Info, ShieldAlert, Sprout, Timer, RotateCcw } from "lucide-react";
 import { useAppData } from "@/lib/AppDataContext";
 import { PageHeader } from "@/components/app/AppShell";
 import { toast } from "sonner";
@@ -55,8 +55,10 @@ const DEFAULT_RADAR = {
 function AlertsPage() {
   const { activeFarm, alerts = [], setAlerts, patchRecord } = useAppData();
   const [dismissed, setDismissed] = useState([]);
+  const [isRestoring, setIsRestoring] = useState(false);
 
   const visibleAlerts = alerts.filter((a) => !dismissed.includes(a._id) && a.status !== "dismissed");
+  const dismissedAlerts = alerts.filter((a) => dismissed.includes(a._id) || a.status === "dismissed");
   const criticalCount = visibleAlerts.filter((a) => a.severity === "critical").length;
   const warningCount = visibleAlerts.filter((a) => a.severity === "warning").length;
 
@@ -71,8 +73,7 @@ function AlertsPage() {
     { icon: BellRing, label: "Equipment risk", ...radarData["Equipment risk"] },
   ];
 
-  // Persist dismissal as status: "dismissed" so it survives a refresh instead
-  // of quietly reappearing once local state resets.
+  // Persist dismissal as status: "dismissed" so it survives a refresh
   const handleDismiss = (id) => {
     setDismissed((prev) => [...prev, id]);
     setAlerts((prev) => prev.map((a) => (a._id === id ? { ...a, status: "dismissed" } : a)));
@@ -91,18 +92,52 @@ function AlertsPage() {
     });
   };
 
+  // Restore all dismissed alerts back to status: "active" on server and in state
+  const handleRestoreAlerts = async () => {
+    if (dismissedAlerts.length === 0 || isRestoring) return;
+    setIsRestoring(true);
+    const idsToRestore = dismissedAlerts.map(a => a._id);
+    setDismissed([]);
+    setAlerts((prev) => prev.map((a) => (idsToRestore.includes(a._id) ? { ...a, status: "active" } : a)));
+
+    try {
+      await Promise.all(idsToRestore.map((id) => patchRecord(`/alerts/${id}`, { status: "active" })));
+      toast.success(`Restored ${idsToRestore.length} alert${idsToRestore.length > 1 ? "s" : ""}`);
+    } catch (err) {
+      toast.error("Failed to restore some alerts on the server.");
+    } finally {
+      setIsRestoring(false);
+    }
+  };
+
   return (
     <div>
       <PageHeader
         title="Risk Alerts"
         subtitle={`${criticalCount} critical · ${warningCount} warnings · monitored for ${activeFarm?.name || "your farm"}`}
         action={
-          <button
-            onClick={handleMarkAllReviewed}
-            className="glass flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold transition-colors hover:border-primary/30"
-          >
-            <CheckCheck className="h-3.5 w-3.5 text-primary" /> Mark all reviewed
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            {dismissedAlerts.length > 0 && (
+              <button
+                type="button"
+                onClick={handleRestoreAlerts}
+                disabled={isRestoring}
+                className="glass flex items-center gap-1.5 rounded-xl border border-border px-3 sm:px-4 py-2 text-xs font-semibold text-muted-foreground hover:border-primary/40 hover:text-primary transition-colors cursor-pointer"
+              >
+                <RotateCcw className={`h-3.5 w-3.5 ${isRestoring ? "animate-spin" : ""}`} />
+                <span>{isRestoring ? "Restoring..." : `Restore reviewed (${dismissedAlerts.length})`}</span>
+              </button>
+            )}
+            {visibleAlerts.length > 0 && (
+              <button
+                type="button"
+                onClick={handleMarkAllReviewed}
+                className="glass flex items-center gap-1.5 rounded-xl px-3 sm:px-4 py-2 text-xs font-semibold transition-colors hover:border-primary/30 cursor-pointer"
+              >
+                <CheckCheck className="h-3.5 w-3.5 text-primary" /> Mark all reviewed
+              </button>
+            )}
+          </div>
         }
       />
 
@@ -141,13 +176,33 @@ function AlertsPage() {
 
       {/* Alert cards */}
       {visibleAlerts.length === 0 ? (
-        <div className="glass grid place-items-center rounded-2xl p-10 text-center">
-          <CheckCheck className="h-6 w-6 text-primary" />
-          <div className="mt-2 text-sm font-medium">All clear — no active alerts</div>
-          <p className="mt-1 text-xs text-muted-foreground">All alerts have been reviewed. New alerts will appear here automatically.</p>
-          <button onClick={() => setDismissed([])} className="mt-4 rounded-xl border border-border px-4 py-2 text-xs font-medium text-muted-foreground hover:border-primary/30 hover:text-primary">
-            Restore alerts
-          </button>
+        <div className="glass grid place-items-center rounded-2xl p-8 sm:p-12 text-center">
+          {dismissedAlerts.length > 0 ? (
+            <>
+              <CheckCheck className="h-8 w-8 text-primary" />
+              <div className="mt-3 text-base font-semibold">All active alerts reviewed</div>
+              <p className="mt-1 text-xs text-muted-foreground max-w-sm leading-relaxed">
+                You have reviewed and dismissed {dismissedAlerts.length} alert{dismissedAlerts.length > 1 ? "s" : ""}. You can restore them anytime to inspect their history and recommendations.
+              </p>
+              <button
+                type="button"
+                onClick={handleRestoreAlerts}
+                disabled={isRestoring}
+                className="mt-4 flex items-center gap-1.5 rounded-xl border border-primary/40 bg-primary/10 px-4 py-2 text-xs font-semibold text-primary hover:bg-primary/20 transition-colors cursor-pointer"
+              >
+                <RotateCcw className={`h-3.5 w-3.5 ${isRestoring ? "animate-spin" : ""}`} />
+                <span>{isRestoring ? "Restoring..." : `Restore ${dismissedAlerts.length} reviewed alert${dismissedAlerts.length > 1 ? "s" : ""}`}</span>
+              </button>
+            </>
+          ) : (
+            <>
+              <ShieldAlert className="h-8 w-8 text-primary" />
+              <div className="mt-3 text-base font-semibold">All clear — no active alerts</div>
+              <p className="mt-1 text-xs text-muted-foreground max-w-sm leading-relaxed">
+                KrishiMitra is continuously monitoring weather changes, crop growth milestones, and farm schedules. New alerts will appear here automatically when risk conditions are detected.
+              </p>
+            </>
+          )}
         </div>
       ) : (
         <div className="space-y-3.5">

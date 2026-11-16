@@ -40,9 +40,43 @@ class IrrigationPredictionService:
                 f"Irrigation model unavailable (could not load from {MODEL_DIR}): {e}"
             )
 
+    def _get_kb_recommendation(self, data):
+        """Consult agronomic soil moisture thresholds and crop water profile when model binary is unavailable."""
+        try:
+            soil_moisture = float(data.get("Soil_Moisture", 40.0))
+            forecast_rain = float(data.get("Forecast_Rainfall_7Days_mm", 0.0))
+            crop = str(data.get("Crop_Type", "Wheat")).strip()
+            stage = str(data.get("Crop_Growth_Stage", "Vegetative")).strip()
+
+            if forecast_rain >= 30.0:
+                need = "Hold Irrigation (Significant rain expected)"
+                detail = f"Forecast indicates {forecast_rain:.1f} mm rain over 7 days. Delay irrigation to avoid waterlogging."
+            elif soil_moisture < 35.0:
+                need = "Immediate Irrigation Required"
+                detail = f"Soil moisture is critical at {soil_moisture:.1f}%. Apply scheduled irrigation immediately for {crop} ({stage} stage)."
+            elif soil_moisture < 50.0:
+                need = "Moderate Irrigation Recommended"
+                detail = f"Soil moisture is at {soil_moisture:.1f}%. Irrigate within 24-48 hours to maintain optimal root zone moisture."
+            else:
+                need = "Adequate Moisture (No Irrigation Needed)"
+                detail = f"Soil moisture is sufficient at {soil_moisture:.1f}%. Normal crop growth supported without supplemental water."
+
+            return {
+                "irrigation_need": need,
+                "detail": detail,
+                "soil_moisture": soil_moisture,
+                "forecast_rainfall_mm": forecast_rain,
+                "source": "knowledge_base",
+                "is_ml_prediction": False,
+                "note": "Calculated from agronomic soil moisture thresholds and weather forecast",
+            }
+        except Exception as e:
+            logger.error("Failed to compute agronomic irrigation recommendation: %s", e)
+            return "N/A (Agronomic calculation error)"
+
     def predict(self, data):
         if not self._loaded or self.model is None:
-            return "N/A (Model unavailable)"
+            return self._get_kb_recommendation(data)
 
         try:
             features = pd.DataFrame([{
@@ -71,10 +105,15 @@ class IrrigationPredictionService:
 
             prediction = self.model.predict(features)[0]
             irrigation = self.encoder.inverse_transform([prediction])[0]
-            return irrigation
+            return {
+                "irrigation_need": irrigation,
+                "source": "ml_model",
+                "is_ml_prediction": True,
+                "note": "Machine Learning Model Prediction",
+            }
         except Exception as e:
             logger.error("Irrigation prediction failed: %s", e)
-            return "N/A (Model unavailable)"
+            return self._get_kb_recommendation(data)
 
 
 irrigation_service = IrrigationPredictionService()

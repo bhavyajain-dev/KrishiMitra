@@ -158,12 +158,12 @@ function ExpensesPage() {
                   placeholder="What did you spend on?"
                   className={`w-full rounded-lg border bg-secondary/40 px-3 py-2 text-xs outline-none focus:border-primary/50 ${expenseErrors.label ? "border-destructive" : "border-input"}`}
                 />
-                {expenseErrors.label && <p className="mt-1 flex items-center gap-1 text-[11px] text-destructive"><AlertCircle className="h-3 w-3" />{expenseErrors.label}</p>}
+                {expenseErrors.label && <p className="mt-1 flex items-center gap-1 text-[11px] text-destructive leading-tight"><AlertCircle className="h-3 w-3 shrink-0" /><span>{expenseErrors.label}</span></p>}
               </div>
               <select
                 value={formData.category}
                 onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                className="rounded-lg border border-input bg-secondary/40 px-3 py-2 text-xs outline-none focus:border-primary/50"
+                className="w-full rounded-lg border border-input bg-secondary/40 px-3 py-2 text-xs outline-none focus:border-primary/50"
               >
                 <option value="seeds">Seeds</option>
                 <option value="fertilizer">Fertilizer</option>
@@ -177,19 +177,21 @@ function ExpensesPage() {
               <div>
                 <input
                   type="number"
+                  min="1"
+                  step="any"
                   value={formData.amountRs}
                   onChange={(e) => { setFormData({ ...formData, amountRs: e.target.value }); if (expenseErrors.amountRs) setExpenseErrors(p => ({...p, amountRs: ""})); }}
                   placeholder="₹ Amount"
                   className={`w-full rounded-lg border bg-secondary/40 px-3 py-2 text-xs outline-none focus:border-primary/50 ${expenseErrors.amountRs ? "border-destructive" : "border-input"}`}
                 />
-                {expenseErrors.amountRs && <p className="mt-1 flex items-center gap-1 text-[11px] text-destructive"><AlertCircle className="h-3 w-3" />{expenseErrors.amountRs}</p>}
+                {expenseErrors.amountRs && <p className="mt-1 flex items-center gap-1 text-[11px] text-destructive leading-tight"><AlertCircle className="h-3 w-3 shrink-0" /><span>{expenseErrors.amountRs}</span></p>}
               </div>
               <button
                 disabled={isSubmitting}
                 type="submit"
-                className="flex items-center justify-center gap-1 rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground transition-transform hover:scale-[1.03]"
+                className="flex items-center justify-center gap-1 rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground transition-transform hover:scale-[1.03] w-full sm:w-auto cursor-pointer"
               >
-                <Plus className="h-4 w-4" /> {isSubmitting ? "..." : "Add"}
+                <Plus className="h-4 w-4" /> {isSubmitting ? "Adding..." : "Add"}
               </button>
             </div>
           </form>

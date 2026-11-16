@@ -69,7 +69,12 @@ class CropYieldPredictionView(APIView):
         serializer.is_valid(raise_exception=True)
         try:
             prediction = yield_service.predict(serializer.validated_data)
-            return Response({"predicted_yield": prediction})
+            return Response({
+                "predicted_yield": prediction,
+                "source": "ml_model" if yield_service._loaded else "unavailable",
+                "is_ml_prediction": yield_service._loaded,
+                "note": "HistGradientBoosting Yield Regressor" if yield_service._loaded else "Model artifact unavailable"
+            })
         except Exception as e:
             return Response({"error": str(e)}, status=500)
 
@@ -80,8 +85,14 @@ class FertilizerRecommendationView(APIView):
         serializer = FertilizerRecommendationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
-            prediction = fertilizer_service.predict(serializer.validated_data)
-            return Response({"recommended_fertilizer": prediction})
+            result = fertilizer_service.predict(serializer.validated_data)
+            if isinstance(result, dict):
+                return Response(result)
+            return Response({
+                "recommended_fertilizer": result,
+                "source": "ml_model" if fertilizer_service._loaded else "knowledge_base",
+                "is_ml_prediction": fertilizer_service._loaded,
+            })
         except Exception as e:
             return Response({"error": str(e)}, status=500)
 
@@ -92,7 +103,13 @@ class IrrigationPredictionView(APIView):
         serializer = IrrigationPredictionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
-            prediction = irrigation_service.predict(serializer.validated_data)
-            return Response({"irrigation_need": prediction})
+            result = irrigation_service.predict(serializer.validated_data)
+            if isinstance(result, dict):
+                return Response(result)
+            return Response({
+                "irrigation_need": result,
+                "source": "ml_model" if irrigation_service._loaded else "knowledge_base",
+                "is_ml_prediction": irrigation_service._loaded,
+            })
         except Exception as e:
             return Response({"error": str(e)}, status=500)

@@ -1,4 +1,4 @@
-# KrishiMitra — AI Smart Farming Platform
+# KrishiMitra — AI-Powered Smart Agriculture Platform
 
 **KrishiMitra** is a full-stack digital agriculture platform for Indian farmers.
 It provides localized market-price trends, weather monitoring, adaptive crop

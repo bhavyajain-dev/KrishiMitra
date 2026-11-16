@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
+import { Route as AppAiMitraRouteImport } from './routes/_app.ai-mitra'
 import { Route as AppAiSaathiRouteImport } from './routes/_app.ai-saathi'
 import { Route as AppAlertsRouteImport } from './routes/_app.alerts'
 import { Route as AppCropPlanRouteImport } from './routes/_app.crop-plan'
@@ -42,6 +43,11 @@ const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
   path: '/sitemap.xml',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AppAiMitraRoute = AppAiMitraRouteImport.update({
+  id: '/ai-mitra',
+  path: '/ai-mitra',
+  getParentRoute: () => AppRoute,
 } as any)
 const AppAiSaathiRoute = AppAiSaathiRouteImport.update({
   id: '/ai-saathi',
@@ -98,6 +104,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/ai-mitra': typeof AppAiMitraRoute
   '/ai-saathi': typeof AppAiSaathiRoute
   '/alerts': typeof AppAlertsRoute
   '/crop-plan': typeof AppCropPlanRoute
@@ -113,6 +120,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/ai-mitra': typeof AppAiMitraRoute
   '/ai-saathi': typeof AppAiSaathiRoute
   '/alerts': typeof AppAlertsRoute
   '/crop-plan': typeof AppCropPlanRoute
@@ -130,6 +138,7 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/auth': typeof AuthRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/_app/ai-mitra': typeof AppAiMitraRoute
   '/_app/ai-saathi': typeof AppAiSaathiRoute
   '/_app/alerts': typeof AppAlertsRoute
   '/_app/crop-plan': typeof AppCropPlanRoute
@@ -147,6 +156,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/sitemap.xml'
+    | '/ai-mitra'
     | '/ai-saathi'
     | '/alerts'
     | '/crop-plan'
@@ -162,6 +172,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/sitemap.xml'
+    | '/ai-mitra'
     | '/ai-saathi'
     | '/alerts'
     | '/crop-plan'
@@ -178,6 +189,7 @@ export interface FileRouteTypes {
     | '/_app'
     | '/auth'
     | '/sitemap.xml'
+    | '/_app/ai-mitra'
     | '/_app/ai-saathi'
     | '/_app/alerts'
     | '/_app/crop-plan'
@@ -226,6 +238,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/sitemap.xml'
       preLoaderRoute: typeof SitemapDotxmlRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_app/ai-mitra': {
+      id: '/_app/ai-mitra'
+      path: '/ai-mitra'
+      fullPath: '/ai-mitra'
+      preLoaderRoute: typeof AppAiMitraRouteImport
+      parentRoute: typeof AppRoute
     }
     '/_app/ai-saathi': {
       id: '/_app/ai-saathi'
@@ -301,6 +320,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AppRouteChildren {
+  AppAiMitraRoute: typeof AppAiMitraRoute
   AppAiSaathiRoute: typeof AppAiSaathiRoute
   AppAlertsRoute: typeof AppAlertsRoute
   AppCropPlanRoute: typeof AppCropPlanRoute
@@ -314,6 +334,7 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppAiMitraRoute: AppAiMitraRoute,
   AppAiSaathiRoute: AppAiSaathiRoute,
   AppAlertsRoute: AppAlertsRoute,
   AppCropPlanRoute: AppCropPlanRoute,

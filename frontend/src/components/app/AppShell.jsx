@@ -41,7 +41,7 @@ export function ThemeToggle() {
 }
 
 const nav = [
-  { label: "AI Mitra", to: "/ai-saathi", icon: MessageSquareText, badge: null, highlight: true },
+  { label: "AI Mitra", to: "/ai-mitra", icon: MessageSquareText, badge: null, highlight: true },
   { label: "Dashboard", to: "/dashboard", icon: LayoutDashboard },
   { label: "Farms", to: "/farms", icon: MapPinned },
   { label: "Crop Plan", to: "/crop-plan", icon: CalendarCheck },
@@ -57,17 +57,17 @@ const secondaryNav = [
 
 export function BrandMark({ compact = false }) {
   return (
-    <div className="flex items-center gap-2.5">
-      <div className="relative grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary/15 ring-1 ring-primary/30">
-        <Leaf className="h-4.5 w-4.5 text-primary" />
+    <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+      <div className="relative grid h-8 w-8 sm:h-9 sm:w-9 shrink-0 place-items-center rounded-xl bg-primary/15 ring-1 ring-primary/30">
+        <Leaf className="h-4 w-4 sm:h-4.5 sm:w-4.5 text-primary" />
         <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-primary pulse-dot" />
       </div>
       {!compact && (
         <div className="min-w-0 leading-tight">
-          <div className="font-display text-lg font-bold tracking-tight text-foreground">
+          <div className="font-display text-base sm:text-lg font-bold tracking-tight text-foreground whitespace-nowrap">
             Krishi<span className="text-primary">Mitra</span>
           </div>
-          <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+          <div className="hidden xs:block text-[9px] sm:text-[10px] uppercase tracking-[0.16em] sm:tracking-[0.18em] text-muted-foreground whitespace-nowrap">
             Agri Intelligence
           </div>
         </div>
@@ -246,9 +246,9 @@ export function AppShell({ children }) {
             </div>
 
             <div className="flex shrink-0 items-center gap-2">
-              <Link to="/ai-saathi" className="hidden items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/20 md:flex">
+              <Link to="/ai-mitra" className="hidden items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/20 md:flex">
                 <Sparkles className="h-3.5 w-3.5" />
-                AI Assistant
+                AI Mitra
               </Link>
               <ThemeToggle />
               <Link
@@ -284,16 +284,16 @@ export function AppShell({ children }) {
   );
 }
 
-export function PageHeader({ title, subtitle, action }) {
+export function PageHeader({ title, subtitle, action, className = "" }) {
   return (
-    <div className="mb-6 grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3 sm:flex sm:flex-wrap sm:justify-between">
+    <div className={`mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between ${className}`}>
       <div className="min-w-0">
-        <h1 className="truncate font-display text-xl font-bold tracking-tight sm:text-2xl">
+        <h1 className="font-display text-xl font-bold tracking-tight sm:text-2xl text-foreground">
           {title}
         </h1>
         {subtitle && <p className="mt-1 text-sm text-muted-foreground" suppressHydrationWarning>{subtitle}</p>}
       </div>
-      {action && <div className="shrink-0">{action}</div>}
+      {action && <div className="flex flex-wrap items-center gap-2 sm:shrink-0">{action}</div>}
     </div>
   );
 }

@@ -73,10 +73,11 @@ function ScoreBar({ value, color = "bg-primary" }) {
 
 export function RecommendationsView() {
   const { activeFarmId, activeFarm, postScoped, fetchScoped, token } = useAppData();
-  const [results, setResults]     = useState(null);
+  const [results, setResults] = useState(null);
   const [llmSummary, setLlmSummary] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [saveLoading, setSaveLoading] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [error, setError] = useState(null);
 
   const loadSavedRecommendations = useCallback(async () => {
     if (!activeFarmId || !token) {
@@ -84,6 +85,8 @@ export function RecommendationsView() {
       return;
     }
 
+    setIsLoading(true);
+    setError(null);
     try {
       const data = await fetchScoped("/recommendations");
       const latest = Array.isArray(data) ? data.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))[0] : null;
@@ -96,14 +99,15 @@ export function RecommendationsView() {
       }
     } catch (err) {
       console.error("Failed to load saved recommendations", err);
+      setError("Failed to load existing recommendations.");
+    } finally {
+      setIsLoading(false);
     }
   }, [activeFarmId, token, fetchScoped]);
 
   useEffect(() => {
     loadSavedRecommendations();
   }, [loadSavedRecommendations]);
-
-
 
   useEffect(() => {
     const unsubscribe = subscribeAiSyncRefresh(() => {
@@ -112,24 +116,180 @@ export function RecommendationsView() {
     return unsubscribe;
   }, [loadSavedRecommendations]);
 
+  const handleGenerateRecommendations = async () => {
+    setIsGenerating(true);
+    setError(null);
 
+    const month = new Date().getMonth(); // 0-11
+    const season = (month >= 5 && month <= 9) ? "kharif" : "rabi";
+
+    const payload = {
+      ph: Number(activeFarm?.ph) || 6.8,
+      nitrogen: Number(activeFarm?.nitrogen) || 140,
+      phosphorus: Number(activeFarm?.phosphorus) || 35,
+      potassium: Number(activeFarm?.potassium) || 180,
+      organicCarbon: Number(activeFarm?.organicCarbon) || 0.6,
+      ec: Number(activeFarm?.ec) || 0.35,
+      season,
+      areaAcres: Number(activeFarm?.areaAcres) || 2.0,
+      waterAvailability: (activeFarm?.waterAvailability || "medium").toLowerCase(),
+      state: activeFarm?.state || "Gujarat",
+    };
+
+    try {
+      const res = await fetch(`${API_URL}/soil_recommend`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        throw new Error(`Recommendation engine returned status ${res.status}`);
+      }
+
+      const data = await res.json();
+      const recs = data.recommendations || [];
+      const summary = data.llm_summary || null;
+
+      setResults(recs);
+      setLlmSummary(summary);
+
+      // Persist to user recommendations for the active farm
+      if (recs.length > 0 && activeFarmId) {
+        try {
+          await postScoped("/recommendations", {
+            farm: activeFarmId,
+            season: payload.season,
+            cropOptions: recs,
+            llmSummary: summary,
+          });
+          toast.success(`Generated recommendations for ${activeFarm?.name || "your farm"}`);
+        } catch (e) {
+          // If saving fails, results are still displayed in view
+        }
+      }
+    } catch (err) {
+      console.error("Failed to generate crop recommendations:", err);
+      setError("Unable to generate recommendations right now. Please check your network and try again.");
+      toast.error("Failed to generate crop recommendations");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
 
   const primary = results?.find((r) => r.isTopPick) || results?.[0];
-  const others  = results?.filter((r) => !r.isTopPick) || [];
+  const others = results?.filter((r) => !r.isTopPick) || [];
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Crop Recommendations"
-        subtitle={`Below are the latest AI-generated crop recommendations saved for your active farm.`}
+        subtitle={
+          activeFarm
+            ? `AI agronomic suitability analysis for ${activeFarm.name} (${activeFarm.areaAcres || 1} acres)`
+            : "AI-powered crop suitability rankings based on soil, climate, and season"
+        }
+        action={
+          <div className="flex flex-wrap items-center gap-2">
+            {results && results.length > 0 && (
+              <button
+                type="button"
+                onClick={handleGenerateRecommendations}
+                disabled={isGenerating}
+                className="flex items-center gap-1.5 rounded-xl border border-border bg-secondary/30 px-3 sm:px-4 py-2 text-xs font-semibold hover:bg-secondary transition-colors cursor-pointer disabled:opacity-60"
+              >
+                <Sparkles className={`h-3.5 w-3.5 text-primary ${isGenerating ? "animate-spin" : ""}`} />
+                <span>{isGenerating ? "Analyzing..." : "Re-analyze Crops"}</span>
+              </button>
+            )}
+          </div>
+        }
       />
 
       <div className="flex justify-between items-center px-2">
         <h2 className="font-display text-lg font-semibold text-primary">Farm Suitability Analysis</h2>
       </div>
 
+      {/* Loading state while generating */}
+      {isGenerating && (
+        <div className="glass rounded-3xl p-10 sm:p-14 text-center">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 ring-1 ring-primary/25">
+            <Loader2 className="h-7 w-7 animate-spin text-primary" />
+          </div>
+          <h3 className="font-display text-base font-semibold text-foreground">
+            Evaluating Farm Suitability & Soil Profile
+          </h3>
+          <p className="mt-2 text-xs text-muted-foreground max-w-md mx-auto leading-relaxed">
+            Running Random Forest & agronomic compatibility models across pH, NPK levels, moisture index, and seasonal crop cycles for {activeFarm?.name || "your farm"}...
+          </p>
+        </div>
+      )}
+
+      {/* Error state */}
+      {error && !isGenerating && (
+        <div className="glass rounded-3xl p-8 text-center border border-destructive/30 bg-destructive/5">
+          <div className="text-sm font-semibold text-destructive">{error}</div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Make sure your farm soil parameters are configured, or try again.
+          </p>
+          <button
+            type="button"
+            onClick={handleGenerateRecommendations}
+            className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90"
+          >
+            <RotateCcw className="h-3.5 w-3.5" /> Try Again
+          </button>
+        </div>
+      )}
+
+      {/* Empty state: No recommendations yet */}
+      {!isLoading && !isGenerating && !results && !error && (
+        <div className="glass rounded-3xl p-8 sm:p-12 text-center border border-border">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 ring-1 ring-primary/30 shadow-sm">
+            <Sprout className="h-7 w-7 text-primary" />
+          </div>
+          <h3 className="font-display text-lg font-semibold text-foreground">
+            No Crop Recommendations Generated Yet
+          </h3>
+          <p className="mt-2 text-xs text-muted-foreground max-w-lg mx-auto leading-relaxed">
+            KrishiMitra analyzes your farm's soil chemistry (pH, Nitrogen, Phosphorus, Potassium), water availability, and regional agricultural season to recommend high-yield crops with estimated margins.
+          </p>
+
+          {/* Active Farm Soil Parameters Summary */}
+          {activeFarm && (
+            <div className="mt-6 mb-8 max-w-md mx-auto grid grid-cols-3 gap-2.5 text-left text-xs bg-secondary/20 rounded-2xl p-4 border border-border/50">
+              <div className="rounded-xl bg-background/50 p-2.5">
+                <div className="text-[10px] text-muted-foreground uppercase font-semibold">Soil pH</div>
+                <div className="mt-0.5 font-bold text-foreground">{activeFarm.ph || "6.8 (Neutral)"}</div>
+              </div>
+              <div className="rounded-xl bg-background/50 p-2.5">
+                <div className="text-[10px] text-muted-foreground uppercase font-semibold">NPK Balance</div>
+                <div className="mt-0.5 font-bold text-foreground">
+                  {activeFarm.nitrogen || 140}:{activeFarm.phosphorus || 35}:{activeFarm.potassium || 180}
+                </div>
+              </div>
+              <div className="rounded-xl bg-background/50 p-2.5">
+                <div className="text-[10px] text-muted-foreground uppercase font-semibold">Water</div>
+                <div className="mt-0.5 font-bold text-foreground capitalize">{activeFarm.waterAvailability || "Medium"}</div>
+              </div>
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={handleGenerateRecommendations}
+            className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground shadow-[0_0_24px_-8px_var(--color-primary)] transition-transform hover:scale-[1.02] cursor-pointer"
+          >
+            <Sparkles className="h-4 w-4" /> Generate Crop Recommendations
+          </button>
+        </div>
+      )}
+
       {/* Results */}
-      {results && !isLoading && primary && (
+      {results && !isGenerating && primary && (
         <>
           {/* Top pick hero */}
           {llmSummary && (

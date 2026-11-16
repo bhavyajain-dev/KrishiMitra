@@ -1,8 +1,9 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect, useRef } from "react";
-import { Search, MapPin, Wind, Droplets, Eye, Gauge, Thermometer, Sun, CloudRain, Cloud, CloudSun, Navigation, Plus, X, Sparkles, Clock, Calendar, AlertCircle, RefreshCw } from "lucide-react";
+import { Search, MapPin, Wind, Droplets, Eye, Gauge, Thermometer, Sun, CloudRain, Cloud, CloudSun, Navigation, Plus, X, Sparkles, Clock, Calendar, AlertCircle, RefreshCw, Loader2 } from "lucide-react";
 import { useAppData } from "@/lib/AppDataContext";
 import { PageHeader } from "@/components/app/AppShell";
+import { setAiHandoff } from "@/lib/aiHandoff";
 
 export const Route = createFileRoute("/_app/weather")({
   head: () => ({
@@ -101,6 +102,11 @@ async function fetchWeatherForLocation(locationQuery, inputLat, inputLon) {
 
   const baseUrl = import.meta.env.VITE_API_URL || (typeof window !== "undefined" ? `http://${window.location.hostname}:5001/api` : "http://localhost:5001/api");
 
+  let isApproximate = false;
+  let matchLevel = "exact";
+  let originalQuery = locationQuery;
+  let displayName = null;
+
   if (lat == null || lon == null) {
     const geoRes = await fetch(`${baseUrl}/geocode?q=${encodeURIComponent(locationQuery)}&limit=1`);
     if (!geoRes.ok) {
@@ -111,10 +117,19 @@ async function fetchWeatherForLocation(locationQuery, inputLat, inputLon) {
       lat = geoData.lat;
       lon = geoData.lon;
       cityName = geoData.city || geoData.district || geoData.address || locationQuery;
+      isApproximate = Boolean(geoData.is_approximate);
+      matchLevel = geoData.match_level || "exact";
+      originalQuery = geoData.original_query || locationQuery;
+      displayName = geoData.display_name || null;
     } else if (geoData && Array.isArray(geoData.results) && geoData.results.length > 0) {
-      lat = geoData.results[0].lat;
-      lon = geoData.results[0].lon;
-      cityName = geoData.results[0].city || geoData.results[0].district || geoData.results[0].address || locationQuery;
+      const top = geoData.results[0];
+      lat = top.lat;
+      lon = top.lon;
+      cityName = top.city || top.district || top.address || locationQuery;
+      isApproximate = Boolean(top.is_approximate);
+      matchLevel = top.match_level || "exact";
+      originalQuery = top.original_query || locationQuery;
+      displayName = top.display_name || null;
     } else {
       throw new Error(`Could not find coordinates for "${locationQuery}"`);
     }
@@ -172,7 +187,19 @@ async function fetchWeatherForLocation(locationQuery, inputLat, inputLon) {
 
   const alerts = data.alerts || [];
 
-  return { cityName, current, daily, hourly, lat, lon, alerts };
+  return {
+    cityName,
+    displayName,
+    isApproximate,
+    matchLevel,
+    originalQuery,
+    current,
+    daily,
+    hourly,
+    lat,
+    lon,
+    alerts,
+  };
 }
 
 // --- Location chip, styled to match the rest of the app (glass cards, theme tokens) ---
@@ -224,8 +251,19 @@ function WeatherPage() {
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const searchRef = useRef(null);
   const searchTimeout = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (searchRef.current && !searchRef.current.contains(e.target)) {
+        setShowSearch(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const API_URL = import.meta.env.VITE_API_URL ||
     (typeof window !== "undefined" ? `http://${window.location.hostname}:5001/api` : "http://localhost:5001/api");
@@ -340,14 +378,20 @@ function WeatherPage() {
     }
   }, [userLocation, activeFarm]);
 
-  // Search handler
+  // Search handler (triggers on 2+ characters with debouncing)
   useEffect(() => {
     clearTimeout(searchTimeout.current);
-    if (searchQuery.length < 3) { setSearchResults([]); return; }
+    const trimmed = searchQuery.trim();
+    if (trimmed.length < 2) {
+      setSearchResults([]);
+      setIsSearching(false);
+      setHighlightedIndex(-1);
+      return;
+    }
     searchTimeout.current = setTimeout(async () => {
       setIsSearching(true);
       try {
-        const res = await fetch(`${API_URL}/geocode?q=${encodeURIComponent(searchQuery)}&limit=5`);
+        const res = await fetch(`${API_URL}/geocode?q=${encodeURIComponent(trimmed)}&limit=6`);
         if (res.ok) {
           const data = await res.json();
           setSearchResults(Array.isArray(data.results) ? data.results : []);
@@ -356,17 +400,35 @@ function WeatherPage() {
         }
       } catch (e) {
         setSearchResults([]);
-      } finally { setIsSearching(false); }
-    }, 500);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 280);
   }, [searchQuery]);
 
   const addLocation = async (item) => {
+    if (!item) return;
+    const cityName = item.city || item.display_name?.split(",")[0]?.trim() || item.query;
     const query = item.address || item.display_name || item.query;
-    const id = Date.now();
     const lat = item.lat != null ? parseFloat(item.lat) : null;
     const lon = item.lon != null ? parseFloat(item.lon) : null;
-    
-    setLocations(prev => [...prev, { id, query, lat, lon }]);
+
+    // Check if location already exists in saved list
+    const existing = locations.find(l =>
+      (l.lat != null && lat != null && Math.abs(l.lat - lat) < 0.05 && Math.abs(l.lon - lon) < 0.05) ||
+      (l.query && query && l.query.toLowerCase() === query.toLowerCase())
+    );
+
+    if (existing) {
+      setActiveId(existing.id);
+      setSearchQuery("");
+      setSearchResults([]);
+      setShowSearch(false);
+      return;
+    }
+
+    const id = Date.now();
+    setLocations(prev => [...prev, { id, query, cityName, lat, lon }]);
     setActiveId(id);
     setSearchQuery("");
     setSearchResults([]);
@@ -385,7 +447,7 @@ function WeatherPage() {
   const hour = new Date().getHours();
 
   // Push the currently viewed conditions into shared app state so the
-  // dashboard weather widget and the AI Saathi chatbot both see live data
+  // dashboard weather widget and the AI Mitra chatbot both see live data
   // instead of staying stuck on "--" / falling back to a separate server call.
   useEffect(() => {
     if (!active?.current) return;
@@ -456,6 +518,62 @@ function WeatherPage() {
     return "Extreme";
   };
 
+  const handleAskAiMitra = () => {
+    const curr = active?.current;
+    const cityName = active?.cityName || activeFarm?.location?.address || "My Farm";
+    const cond = sky?.label || "Clear";
+    const advisories = curr ? buildAdvisory(curr, activeFarm?.waterLevel) : [];
+    const advisorySummary = advisories.length > 0
+      ? advisories.map((a) => `- ${a.title}: ${a.detail}`).join("\n")
+      : "Standard operations recommended.";
+
+    const dailySummary = active?.daily?.slice(0, 5).map((d) =>
+      `- ${d.day}: High ${d.hi}°C / Low ${d.lo}°C, Rain chance ${d.rain}%`
+    ).join("\n") || "No extended forecast available.";
+
+    const farmInfo = activeFarm
+      ? `Farm: ${activeFarm.name || "My Farm"} (Water level: ${activeFarm.waterLevel || "medium"}${activeFarm.waterResources?.length ? `, Sources: ${activeFarm.waterResources.join(", ")}` : ""})`
+      : "";
+
+    const prompt = `Please provide agricultural weather analysis and farming advice for my location:
+
+Location: ${cityName}
+${farmInfo ? `${farmInfo}\n` : ""}Current Conditions:
+- Temperature: ${curr ? `${curr.temp}°C (Feels like ${curr.feelsLike}°C)` : "Currently updating"}
+- Condition: ${cond}
+- Rain Chance: ${curr ? `${curr.rainChance}% (Precipitation: ${curr.precipitation || 0} mm)` : "N/A"}
+- Humidity: ${curr ? `${curr.humidity}% · Wind: ${curr.wind} km/h (${windDirLabel(curr.windDir)})` : "N/A"}
+- UV Index: ${curr ? `${curr.uv} · Pressure: ${curr.pressure} hPa` : "N/A"}
+
+Current Farm Advisories:
+${advisorySummary}
+
+Next 5-Day Forecast:
+${dailySummary}
+
+Instructions:
+1. Provide practical recommendations for irrigation (whether to irrigate or hold off).
+2. Advise on pesticide or fertilizer spraying suitability based on wind speed, temperature, and rain probability.
+3. Highlight any weather risks over the next 3-5 days and how to protect standing crops.`;
+
+    setAiHandoff({
+      source: "weather",
+      taskName: "Weather & Advisory",
+      actionLabel: "Preparing Weather Advisory",
+      completedLabel: "Weather advisory complete",
+      contextTitle: `Weather Advisory — ${cityName}`,
+      prompt,
+      metadata: {
+        cityName,
+        temp: curr?.temp ?? 28,
+        condition: cond,
+        rainChance: curr?.rainChance ?? 10,
+      },
+    });
+
+    navigate({ to: "/ai-mitra" });
+  };
+
   return (
     <div>
       <PageHeader
@@ -474,8 +592,10 @@ function WeatherPage() {
               </span>
             )}
             <button
-              onClick={() => navigate({ to: "/ai-saathi?prompt=%40weather" })}
-              className="flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground shadow-[0_0_24px_-8px_var(--color-primary)] transition-transform hover:scale-[1.03]"
+              onClick={handleAskAiMitra}
+              disabled={!active?.current}
+              className="flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground shadow-[0_0_24px_-8px_var(--color-primary)] transition-transform hover:scale-[1.03] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              title={active?.current ? "Ask AI Mitra for weather advice" : "Loading weather data..."}
             >
               <Sparkles className="h-3.5 w-3.5" /> Ask AI Mitra
             </button>
@@ -485,37 +605,80 @@ function WeatherPage() {
 
       {/* Search + saved locations, in a normal glass card like every other page */}
       <section className="glass relative mb-5 rounded-2xl p-4">
-        <div className="relative flex items-center gap-2 rounded-xl bg-secondary/50 px-3 py-2 ring-1 ring-border focus-within:ring-primary/40">
+        <div ref={searchRef} className="relative flex items-center gap-2 rounded-xl bg-secondary/50 px-3 py-2 ring-1 ring-border focus-within:ring-primary/40">
           <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           <input
             type="text"
-            placeholder="Search city to add..."
+            placeholder="Search city to add (e.g. Surat, Pune, Indore)..."
             value={searchQuery}
-            onChange={e => { setSearchQuery(e.target.value); setShowSearch(true); }}
+            onChange={e => { setSearchQuery(e.target.value); setShowSearch(true); setHighlightedIndex(-1); }}
             onFocus={() => setShowSearch(true)}
+            onKeyDown={e => {
+              if (e.key === "ArrowDown") {
+                e.preventDefault();
+                setHighlightedIndex(p => (searchResults.length > 0 ? (p + 1) % searchResults.length : -1));
+              } else if (e.key === "ArrowUp") {
+                e.preventDefault();
+                setHighlightedIndex(p => (searchResults.length > 0 ? (p - 1 + searchResults.length) % searchResults.length : -1));
+              } else if (e.key === "Enter") {
+                e.preventDefault();
+                if (highlightedIndex >= 0 && searchResults[highlightedIndex]) {
+                  addLocation(searchResults[highlightedIndex]);
+                } else if (searchResults.length > 0) {
+                  addLocation(searchResults[0]);
+                }
+              } else if (e.key === "Escape") {
+                setShowSearch(false);
+              }
+            }}
             className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
           />
-          {showSearch && searchResults.length > 0 && (
-            <div className="glass absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-y-auto rounded-xl shadow-2xl">
-              {searchResults.map(item => {
-                const addr = item.address || {};
-                const name = addr.city || addr.town || addr.village || addr.county || item.display_name.split(",")[0];
-                const state = addr.state || addr.country || "";
-                return (
-                  <button
-                    key={item.place_id}
-                    onClick={() => addLocation(item)}
-                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm hover:bg-secondary/60 first:rounded-t-xl last:rounded-b-xl"
-                  >
-                    <MapPin className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <div>
-                      <div className="font-medium">{name}</div>
-                      {state && <div className="text-[11px] text-muted-foreground">{state}</div>}
-                    </div>
-                    <Plus className="ml-auto h-3.5 w-3.5 text-muted-foreground" />
-                  </button>
-                );
-              })}
+          {isSearching && (
+            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
+          )}
+
+          {showSearch && searchQuery.trim().length >= 2 && (
+            <div className="glass absolute left-0 right-0 top-full z-50 mt-1.5 max-h-64 overflow-y-auto rounded-xl border border-border bg-card/95 backdrop-blur-md shadow-2xl p-1">
+              {isSearching ? (
+                <div className="flex items-center justify-center gap-2 py-4 text-xs text-muted-foreground">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                  <span>Searching locations...</span>
+                </div>
+              ) : searchResults.length === 0 ? (
+                <div className="py-4 text-center text-xs text-muted-foreground">
+                  No matching locations found for "{searchQuery}".
+                </div>
+              ) : (
+                searchResults.map((item, index) => {
+                  const cityName = item.city || item.display_name?.split(",")[0]?.trim() || item.query;
+                  const stateDistrict = [item.district, item.state, "India"]
+                    .filter(Boolean)
+                    .filter((v, i, a) => a.indexOf(v) === i && v.toLowerCase() !== cityName.toLowerCase())
+                    .join(", ");
+                  const isHighlighted = highlightedIndex === index;
+
+                  return (
+                    <button
+                      key={item.place_id || `${item.lat}-${item.lon}-${index}`}
+                      type="button"
+                      onClick={() => addLocation(item)}
+                      onMouseEnter={() => setHighlightedIndex(index)}
+                      className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-sm transition-colors cursor-pointer ${
+                        isHighlighted ? "bg-primary/15 text-primary" : "hover:bg-secondary/60 text-foreground"
+                      }`}
+                    >
+                      <MapPin className={`h-4 w-4 shrink-0 ${isHighlighted ? "text-primary" : "text-muted-foreground"}`} />
+                      <div className="min-w-0 flex-1">
+                        <div className="font-semibold leading-tight truncate">{cityName}</div>
+                        {stateDistrict && (
+                          <div className="text-[11px] text-muted-foreground truncate mt-0.5">{stateDistrict}</div>
+                        )}
+                      </div>
+                      <Plus className="ml-auto h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    </button>
+                  );
+                })
+              )}
             </div>
           )}
         </div>
@@ -598,6 +761,18 @@ function WeatherPage() {
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
           {/* Left Column (Hero, Advisories, Hourly, Details) */}
           <div className="flex flex-col gap-5 lg:col-span-2">
+            {/* Regional Weather Transparency Banner */}
+            {active.isApproximate && (
+              <div className="flex items-start gap-3 rounded-2xl border border-warning/40 bg-warning/10 p-4 text-xs text-warning shadow-xs">
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                <div className="min-w-0 flex-1 leading-relaxed">
+                  <span className="font-semibold">Regional Weather Notice:</span> Showing weather from the{" "}
+                  <strong>{active.cityName}</strong> regional center for <em>"{active.originalQuery || active.cityName}"</em>.
+                  Exact coordinates were not found on this farm plot; regional weather is provided for guidance.
+                </div>
+              </div>
+            )}
+
             {/* Hero */}
             <section
               className="relative flex min-h-[260px] flex-col justify-between overflow-hidden rounded-2xl p-6 shadow-lg ring-1 ring-border transition-all duration-1000"

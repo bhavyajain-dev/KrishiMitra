@@ -76,6 +76,7 @@ class EmailService:
                         "[DEV EMAIL FALLBACK] SMTP failed in DEBUG mode. Recipient: %s | Subject: %s\nText preview: %s",
                         to_email, subject, text_content[:120] if text_content else "(HTML only)"
                     )
+                    print(f"\n[DEV AUTH EMAIL LOG] To: {to_email} | Subject: {subject}\n{text_content}\n", flush=True)
                     return True, "Email logged to console (SMTP fallback in dev mode)."
                 return False, f"SMTP send failed: {exc}"
 
@@ -85,6 +86,8 @@ class EmailService:
             "Recipient: %s | Subject: %s\nText preview: %s",
             to_email, subject, text_content[:120] if text_content else "(HTML only)"
         )
+        if getattr(settings, "DEBUG", False):
+            print(f"\n[DEV AUTH EMAIL LOG] To: {to_email} | Subject: {subject}\n{text_content}\n", flush=True)
         return True, "Email logged to console (no credentials configured)."
 
 

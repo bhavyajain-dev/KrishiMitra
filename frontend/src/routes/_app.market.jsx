@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { useAppData } from "@/lib/AppDataContext";
 import { PageHeader } from "@/components/app/AppShell";
+import { setAiHandoff } from "@/lib/aiHandoff";
 import { LineChart as LucideLineChart, Search, MapPin, TrendingUp, RefreshCw, Store, Filter, ChevronDown, Sparkles } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
@@ -29,6 +30,7 @@ function MarketPage() {
   // Loading states
   const [loading, setLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [needsRefresh, setNeedsRefresh] = useState(false);
 
@@ -236,6 +238,79 @@ function MarketPage() {
     return { high, low, avg, marketCount, change };
   })();
 
+  const handleAnalyzeWithAi = () => {
+    const rows = tableData.slice(0, 10);
+    const dateStr = lastUpdated
+      ? lastUpdated.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
+      : "Latest recorded";
+
+    const locationDesc = [
+      stateFilter && stateFilter !== "all" ? `State: ${stateFilter}` : null,
+      districtFilter && districtFilter !== "all" ? `District: ${districtFilter}` : null,
+      marketFilter && marketFilter !== "all" ? `Market Yard: ${marketFilter}` : "All Mandis in District",
+    ].filter(Boolean).join(", ") || "All available locations";
+
+    let priceSummary = "";
+    if (rows.length > 0) {
+      priceSummary = rows.map(r => {
+        const comm = r.commodity || "Commodity";
+        const variety = r.variety ? ` (${r.variety})` : "";
+        const mkt = r.market ? ` at ${r.market}` : "";
+        const modal = typeof r.modal_price === "number" ? `₹${r.modal_price.toLocaleString("en-IN")}/Qtl` : "N/A";
+        const minMax = (typeof r.min_price === "number" && typeof r.max_price === "number")
+          ? ` [Min: ₹${r.min_price} - Max: ₹${r.max_price}]`
+          : "";
+        return `- ${comm}${variety}${mkt}: Modal Price ${modal}${minMax}`;
+      }).join("\n");
+    } else {
+      priceSummary = "No market price rows currently match the selected filters.";
+    }
+
+    const statsInfo = cropStats
+      ? `\nAggregate Stats for filtered data: Average: ₹${cropStats.avg}/Qtl, High: ₹${cropStats.high}, Low: ₹${cropStats.low}${cropStats.change !== null ? `, Price trend: ${cropStats.change}%` : ""}`
+      : "";
+
+    const prompt = `Please analyze the current market prices for my agricultural produce:
+
+Location: ${locationDesc}
+Data Date: ${dateStr}
+Commodity Filter: ${commoditySearch || "All listed commodities"}
+
+Current Mandi Data (Agmarknet / Data.gov.in):
+${priceSummary}${statsInfo}
+
+Instructions:
+1. Compare available prices across commodities and market yards.
+2. Highlight any notable price spreads, highs, or lows supported by this data.
+3. Provide practical, cautious selling considerations for farmers (e.g., immediate selling vs holding/storage, transportation tradeoffs).
+4. If this dataset represents a single-day snapshot or limited records, clearly acknowledge that long-term trends cannot be verified without historical data. Do not invent or assume missing prices.`;
+
+    const titleLocation = districtFilter && districtFilter !== "all"
+      ? districtFilter
+      : stateFilter && stateFilter !== "all"
+      ? stateFilter
+      : "Agmarknet";
+
+    setIsAnalyzing(true);
+    setAiHandoff({
+      source: "market",
+      taskName: "Market Prices",
+      actionLabel: "Analyzing Market Prices",
+      completedLabel: "Market analysis complete",
+      contextTitle: `Market Analysis — ${commoditySearch ? `${commoditySearch} in ` : ""}${titleLocation}`,
+      prompt,
+      metadata: {
+        state: stateFilter,
+        district: districtFilter,
+        commodity: commoditySearch,
+        recordsCount: rows.length,
+        location: titleLocation,
+      },
+    });
+
+    navigate({ to: "/ai-mitra" });
+  };
+
   return (
     <div className="flex flex-col h-full">
       <PageHeader
@@ -246,7 +321,7 @@ function MarketPage() {
             : "Daily mandi prices via Data.gov.in · Agmarknet"
         }
         action={
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             {needsRefresh && (
               <span className="flex items-center gap-1.5 rounded-full bg-warning/10 px-2.5 py-1 text-[11px] font-medium text-warning">
                 <span className="h-1.5 w-1.5 rounded-full bg-warning animate-pulse" />
@@ -254,12 +329,23 @@ function MarketPage() {
               </span>
             )}
             <button
-              onClick={() => navigate({ to: "/ai-saathi?prompt=%40market" })}
-              className="flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground shadow-[0_0_24px_-8px_var(--color-primary)] transition-transform hover:scale-[1.03]"
+              type="button"
+              onClick={handleAnalyzeWithAi}
+              disabled={isAnalyzing}
+              className="flex items-center gap-1.5 rounded-xl bg-primary px-3 sm:px-4 py-2 text-xs font-semibold text-primary-foreground shadow-[0_0_24px_-8px_var(--color-primary)] transition-transform hover:scale-[1.03] cursor-pointer disabled:opacity-75"
             >
-              <Sparkles className="h-3.5 w-3.5" /> Analyze with AI
+              {isAnalyzing ? (
+                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Sparkles className="h-3.5 w-3.5" />
+              )}
+              <span>{isAnalyzing ? "Preparing Analysis..." : "Analyze with AI"}</span>
             </button>
-            <button onClick={() => { fetchPrices(); fetchHistory(); }} className="flex items-center gap-1.5 rounded-xl border border-border bg-secondary/30 px-4 py-2 text-xs font-semibold hover:bg-secondary transition-colors">
+            <button
+              type="button"
+              onClick={() => { fetchPrices(); fetchHistory(); }}
+              className="flex items-center gap-1.5 rounded-xl border border-border bg-secondary/30 px-3 sm:px-4 py-2 text-xs font-semibold hover:bg-secondary transition-colors cursor-pointer"
+            >
               <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
             </button>
           </div>
@@ -434,7 +520,7 @@ function MarketPage() {
                   </div>
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={chartData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+                    <LineChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
                       <XAxis 
                         dataKey="date" 
@@ -508,7 +594,7 @@ function MarketPage() {
                   <p>No prices found for your filters.</p>
                 </div>
               ) : (
-                <table className="w-full text-left text-sm mt-5">
+                <table className="w-full min-w-[520px] text-left text-sm mt-5">
                   <thead>
                     <tr className="border-b border-border text-muted-foreground">
                       <th className="pb-3 font-medium px-2">Commodity</th>

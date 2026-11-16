@@ -40,9 +40,61 @@ class FertilizerRecommendationService:
                 f"Fertilizer model unavailable (could not load from {MODEL_DIR}): {e}"
             )
 
+    def _get_kb_recommendation(self, crop_type, stage):
+        """Consult verified ICAR agronomic CSV knowledge base when model binary is unavailable."""
+        csv_path = os.path.join(settings.BASE_DIR, "krishi_core", "data", "06_crop_fertilizer_plan.csv")
+        if not os.path.exists(csv_path):
+            return "N/A (Agronomic knowledge base file not found)"
+
+        try:
+            df = pd.read_csv(csv_path)
+            crop_lower = str(crop_type or "").strip().lower()
+            stage_lower = str(stage or "").strip().lower()
+
+            # Filter rows by crop
+            crop_rows = df[df["crop_name"].str.strip().str.lower() == crop_lower]
+            if crop_rows.empty:
+                # Try substring match
+                crop_rows = df[df["crop_name"].str.strip().str.lower().str.contains(crop_lower, regex=False)]
+
+            if crop_rows.empty:
+                return f"N/A (No verified ICAR fertilizer plan available for {crop_type})"
+
+            # Try matching growth stage
+            matched_row = None
+            if stage_lower:
+                for _, row in crop_rows.iterrows():
+                    r_stage = str(row.get("stage", "")).lower()
+                    if stage_lower in r_stage or any(s in r_stage for s in stage_lower.split()):
+                        matched_row = row
+                        break
+
+            # Fallback to basal or first row for this crop
+            if matched_row is None:
+                matched_row = crop_rows.iloc[0]
+
+            products = str(matched_row.get("products_and_dose", "")).strip()
+            purpose = str(matched_row.get("purpose", "")).strip()
+            matched_stage = str(matched_row.get("stage", "")).strip()
+
+            return {
+                "recommended_fertilizer": products,
+                "stage": matched_stage,
+                "purpose": purpose,
+                "source": "knowledge_base",
+                "is_ml_prediction": False,
+                "note": "Verified ICAR agronomic package of practices",
+            }
+        except Exception as e:
+            logger.error("Failed to query fertilizer knowledge base: %s", e)
+            return "N/A (Knowledge base query error)"
+
     def predict(self, data):
         if not self._loaded or self.model is None:
-            return "N/A (Model unavailable)"
+            return self._get_kb_recommendation(
+                data.get("Crop_Type", "Wheat"),
+                data.get("Crop_Growth_Stage", "Vegetative")
+            )
 
         try:
             features = pd.DataFrame([{
@@ -69,10 +121,18 @@ class FertilizerRecommendationService:
 
             prediction = self.model.predict(features)[0]
             fertilizer = self.encoder.inverse_transform([prediction])[0]
-            return fertilizer
+            return {
+                "recommended_fertilizer": fertilizer,
+                "source": "ml_model",
+                "is_ml_prediction": True,
+                "note": "Machine Learning Model Prediction",
+            }
         except Exception as e:
             logger.error("Fertilizer prediction failed: %s", e)
-            return "N/A (Model unavailable)"
+            return self._get_kb_recommendation(
+                data.get("Crop_Type", "Wheat"),
+                data.get("Crop_Growth_Stage", "Vegetative")
+            )
 
 
 fertilizer_service = FertilizerRecommendationService()

@@ -53,6 +53,7 @@ export function AppDataProvider({ children }) {
     setNotifications([]);
 
     localStorage.removeItem("krishimitra_token");
+    localStorage.removeItem("krishimitra_refresh_token");
     localStorage.removeItem("user_location");
     localStorage.removeItem("active_farm_id");
     router.navigate({ to: "/auth" });
@@ -98,7 +99,10 @@ export function AppDataProvider({ children }) {
       if (meData.user) {
         setUserProfile({
           name: `${meData.user.firstName} ${meData.user.lastName || ""}`.trim(),
+          email: meData.user.email,
           role: meData.user.role,
+          farmingMode: meData.user.farmingMode,
+          phone: meData.user.phone,
         });
         if (meData.user.location && typeof meData.user.location === "string") {
           setUserLocation(prev => ({

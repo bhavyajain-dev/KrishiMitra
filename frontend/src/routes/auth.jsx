@@ -1,8 +1,6 @@
 import { Link, createFileRoute, useNavigate, redirect } from "@tanstack/react-router";
 import { useState, useEffect, useRef } from "react";
 import {
-  ArrowRight,
-  ArrowLeft,
   Lock,
   Mail,
   Phone,
@@ -16,13 +14,19 @@ import {
   Loader2,
   KeyRound,
   Sparkles,
+  ArrowLeft,
+  TrendingUp,
 } from "lucide-react";
-import { GoogleOAuthProvider, useGoogleLogin } from "@react-oauth/google";
+import { GoogleOAuthProvider, useGoogleOAuth } from "@react-oauth/google";
 
 import { BrandMark, ThemeToggle } from "@/components/app/AppShell";
 import { useAppData } from "@/lib/AppDataContext";
+import { useTheme } from "@/components/theme-provider";
 
 export const Route = createFileRoute("/auth")({
+  validateSearch: (search) => ({
+    mode: typeof search?.mode === "string" ? search.mode : undefined,
+  }),
   beforeLoad: () => {
     if (typeof window !== "undefined") {
       const token = localStorage.getItem("krishimitra_token");
@@ -36,12 +40,53 @@ export const Route = createFileRoute("/auth")({
       { title: "Sign in — KrishiMitra" },
       {
         name: "description",
-        content: "Sign in or create your KrishiMitra account to start AI-powered farm planning.",
+        content: "Sign in or create your KrishiMitra account for AI-driven farming intelligence.",
       },
     ],
   }),
   component: AuthPageWrapper,
 });
+
+// Email syntax validator requiring valid local part, @, domain with dot and at least 2 alpha char TLD
+const isValidEmail = (email) => {
+  if (!email || typeof email !== "string") return false;
+  const cleaned = email.trim();
+  return /^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}$/.test(cleaned);
+};
+
+// Password policy validator:
+// - Between 8 and 128 characters
+// - At least one uppercase letter (A-Z)
+// - At least one lowercase letter (a-z)
+// - At least one digit (0-9)
+// - At least one special character
+const validatePasswordPolicy = (pwd) => {
+  if (!pwd || pwd.length < 8) {
+    return "Password must be at least 8 characters long.";
+  }
+  if (pwd.length > 128) {
+    return "Password cannot exceed 128 characters.";
+  }
+  if (!/[A-Z]/.test(pwd)) {
+    return "Password must contain at least one uppercase letter (A-Z).";
+  }
+  if (!/[a-z]/.test(pwd)) {
+    return "Password must contain at least one lowercase letter (a-z).";
+  }
+  if (!/[0-9]/.test(pwd)) {
+    return "Password must contain at least one digit (0-9).";
+  }
+  if (!/[!@#$%^&*(),.?":{}|<>\-_+=\[\]\\/'~`;]/.test(pwd)) {
+    return "Password must contain at least one special character (e.g. !@#$%^&*).";
+  }
+  const lower = pwd.toLowerCase();
+  const base = lower.replace(/[\d!@#$%^&*(),.?":{}|<>\-_+=\[\]\\/'~`;]+$/, "");
+  const commonWords = ["password", "password123", "admin", "admin123", "qwerty", "123456", "12345678", "welcome", "welcome123", "letmein", "krishimitra"];
+  if (commonWords.includes(lower) || commonWords.includes(base)) {
+    return "Password is too common or easily guessable. Please choose a more unique password.";
+  }
+  return null;
+};
 
 const getApiUrl = () =>
   import.meta.env.VITE_API_URL ||
@@ -49,7 +94,35 @@ const getApiUrl = () =>
     ? `http://${window.location.hostname}:5001/api`
     : "http://localhost:5001/api");
 
-// Google SVG Icon
+// Resilient fetch wrapper with client-side abort timeout
+async function fetchWithTimeout(url, options = {}, timeoutMs = 12000) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    return response;
+  } catch (err) {
+    if (err.name === "AbortError") {
+      throw new Error("Request timed out. Please check your internet connection or try again.");
+    }
+    throw err;
+  } finally {
+    clearTimeout(id);
+  }
+}
+
+// Helper to mask email (e.g. b***9@gmail.com)
+function maskEmail(email) {
+  if (!email || !email.includes("@")) return email;
+  const [local, domain] = email.split("@");
+  if (local.length <= 2) return `${local[0]}***@${domain}`;
+  return `${local[0]}***${local[local.length - 1]}@${domain}`;
+}
+
+// Google SVG Icon for instant placeholder rendering
 function GoogleIcon({ className = "h-4 w-4" }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -73,1096 +146,1205 @@ function GoogleIcon({ className = "h-4 w-4" }) {
   );
 }
 
-function GoogleAuthButton({ onStart, onSuccess, onError, disabled }) {
-  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+// Reusable Google Auth Section with Idempotent Initialization and Zero Layout Shifts
+function GoogleAuthSection({ onSuccess, onError, disabled }) {
+  const { clientId, scriptLoadedSuccessfully } = useGoogleOAuth();
+  const containerRef = useRef(null);
+  const renderedRef = useRef(false);
+  const onSuccessRef = useRef(onSuccess);
+  const onErrorRef = useRef(onError);
 
-  if (!googleClientId) {
+  useEffect(() => {
+    onSuccessRef.current = onSuccess;
+  }, [onSuccess]);
+
+  useEffect(() => {
+    onErrorRef.current = onError;
+  }, [onError]);
+
+  useEffect(() => {
+    if (!scriptLoadedSuccessfully || !window.google?.accounts?.id || !containerRef.current) {
+      return;
+    }
+
+    if (renderedRef.current && containerRef.current.hasChildNodes()) {
+      return;
+    }
+
+    try {
+      window.google.accounts.id.initialize({
+        client_id: clientId,
+        callback: (credentialResponse) => {
+          if (credentialResponse?.credential) {
+            onSuccessRef.current?.(credentialResponse.credential);
+          } else {
+            onErrorRef.current?.("Google sign-in completed, but no ID token was returned.");
+          }
+        },
+        auto_select: false,
+        use_fedcm_for_button: false,
+      });
+
+      const buttonWidth = window.innerWidth < 400 ? 280 : 340;
+
+      window.google.accounts.id.renderButton(containerRef.current, {
+        type: "standard",
+        theme: "filled_black",
+        size: "large",
+        text: "continue_with",
+        shape: "rectangular",
+        logo_alignment: "left",
+        width: buttonWidth,
+      });
+
+      renderedRef.current = true;
+    } catch (err) {
+      console.error("[GoogleAuthSection] Failed to render Google button:", err);
+    }
+  }, [scriptLoadedSuccessfully, clientId]);
+
+  if (!clientId) {
     return (
-      <button
-        type="button"
-        onClick={() => {
-          onError(
-            "Google Sign-In requires VITE_GOOGLE_CLIENT_ID in your environment. Please sign in with email and password.",
-          );
-        }}
-        disabled={disabled}
-        className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-border bg-surface hover:bg-surface-2 py-3 px-4 text-sm font-semibold text-foreground transition-all shadow-sm cursor-pointer disabled:opacity-50"
-      >
-        <GoogleIcon className="h-4 w-4 shrink-0" />
-        Continue with Google
-      </button>
+      <div className="rounded-xl border border-dashed border-border bg-surface-2 p-3 text-center text-xs text-muted-foreground min-h-[40px] flex items-center justify-center">
+        Google Sign-In requires <code className="font-mono text-primary ml-1">VITE_GOOGLE_CLIENT_ID</code>.
+      </div>
     );
   }
 
   return (
-    <ActiveGoogleLoginButton
-      onStart={onStart}
-      onSuccess={onSuccess}
-      onError={onError}
-      disabled={disabled}
-    />
+    <div className="w-full flex justify-center py-0.5">
+      <div className="relative w-full max-w-[340px] h-[40px] flex justify-center items-center">
+        {/* Instant zero-flash baseline placeholder */}
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 w-full h-[40px] rounded bg-[#131314] border border-[#31382F] flex items-center justify-center gap-3 px-4 pointer-events-none select-none z-0 shadow-sm"
+        >
+          <div className="w-5 h-5 flex items-center justify-center shrink-0">
+            <GoogleIcon className="w-4 h-4" />
+          </div>
+          <span className="text-[14px] font-medium text-white tracking-normal font-sans antialiased">
+            Continue with Google
+          </span>
+        </div>
+
+        {/* Live Google Identity Services button container (renders directly in place) */}
+        <div
+          ref={containerRef}
+          className={`relative z-10 w-full h-[40px] flex justify-center items-center ${
+            disabled ? "opacity-50 pointer-events-none" : ""
+          }`}
+        />
+      </div>
+    </div>
   );
 }
 
-function ActiveGoogleLoginButton({ onStart, onSuccess, onError, disabled }) {
-  const triggerGoogleLogin = useGoogleLogin({
-    onSuccess: (tokenResponse) => {
-      if (tokenResponse?.access_token) {
-        onSuccess(tokenResponse.access_token);
-      } else {
-        onError("Google authorization succeeded, but no access token was returned.");
-      }
-    },
-    onError: (errorResponse) => {
-      console.warn("Google sign-in error or cancelled:", errorResponse);
-      onError("Google sign-in was cancelled or encountered an error.");
-    },
-  });
+// Reusable Right-Side Marketing Card (Equal Height & Perfectly Balanced with Left Auth Card)
+function AuthMarketingCard({ mode = "login" }) {
+  const isCompact = mode === "login" || mode === "forgot-password";
 
   return (
-    <button
-      type="button"
-      onClick={() => {
-        onStart();
-        triggerGoogleLogin();
-      }}
-      disabled={disabled}
-      className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-border bg-surface hover:bg-surface-2 py-3 px-4 text-sm font-semibold text-foreground transition-all shadow-sm cursor-pointer disabled:opacity-50"
-    >
-      <GoogleIcon className="h-4 w-4 shrink-0" />
-      Continue with Google
-    </button>
+    <div className="w-full max-w-[440px] rounded-2xl border border-border bg-surface/50 backdrop-blur-sm p-6 sm:p-7 shadow-card relative overflow-hidden flex flex-col h-full">
+      <div className="absolute -right-10 -top-10 h-36 w-36 rounded-full bg-primary/10 blur-3xl pointer-events-none" />
+
+      <div className="relative flex-1 flex flex-col justify-between h-full">
+        <div>
+          <div>
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-primary/10 text-primary border border-primary/20">
+              <Sparkles className="h-3 w-3" /> AI-Powered Smart Agriculture Platform
+            </span>
+            <h2 className="text-lg sm:text-xl font-bold tracking-tight text-foreground mt-2 leading-snug">
+              Precision farming intelligence for every harvest.
+            </h2>
+            <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+              Predictive crop models, microclimate advisories, mandi intelligence, and instant agronomy insights.
+            </p>
+          </div>
+
+          {/* 4 Core Platform Feature Highlights (Compact & Consistent) */}
+          <div className={isCompact ? "space-y-2 pt-3" : "space-y-3 pt-3.5"}>
+            <div className={`flex items-center gap-2.5 rounded-xl border border-border bg-surface/80 px-3 ${isCompact ? "py-1.5 sm:py-2" : "py-2.5 sm:py-3"}`}>
+              <div className="rounded-lg bg-primary/15 p-1.5 text-primary shrink-0">
+                <BarChart3 className="h-3.5 w-3.5" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-xs font-semibold text-foreground leading-tight">
+                  Machine Learning Crop Plans
+                </h3>
+                <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">
+                  Tailored N-P-K nutrient & rainfall optimization algorithms.
+                </p>
+              </div>
+            </div>
+
+            <div className={`flex items-center gap-2.5 rounded-xl border border-border bg-surface/80 px-3 ${isCompact ? "py-1.5 sm:py-2" : "py-2.5 sm:py-3"}`}>
+              <div className="rounded-lg bg-primary/15 p-1.5 text-primary shrink-0">
+                <ShieldCheck className="h-3.5 w-3.5" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-xs font-semibold text-foreground leading-tight">
+                  Real-Time Risk Advisories
+                </h3>
+                <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">
+                  Preemptive microclimate alerts and disease prevention guidance.
+                </p>
+              </div>
+            </div>
+
+            <div className={`flex items-center gap-2.5 rounded-xl border border-border bg-surface/80 px-3 ${isCompact ? "py-1.5 sm:py-2" : "py-2.5 sm:py-3"}`}>
+              <div className="rounded-lg bg-primary/15 p-1.5 text-primary shrink-0">
+                <TrendingUp className="h-3.5 w-3.5" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-xs font-semibold text-foreground leading-tight">
+                  Mandi Market Intelligence
+                </h3>
+                <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">
+                  Live wholesale prices and historical rate trends for maximum profit.
+                </p>
+              </div>
+            </div>
+
+            <div className={`flex items-center gap-2.5 rounded-xl border border-border bg-surface/80 px-3 ${isCompact ? "py-1.5 sm:py-2" : "py-2.5 sm:py-3"}`}>
+              <div className="rounded-lg bg-primary/15 p-1.5 text-primary shrink-0">
+                <Sparkles className="h-3.5 w-3.5" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-xs font-semibold text-foreground leading-tight">
+                  AI Mitra 24/7 Advisor
+                </h3>
+                <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">
+                  Contextual conversational advisory for daily farm decision-making.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Bottom Platform Note - Anchored to bottom border */}
+        <div className={`border-t border-border ${isCompact ? "pt-3 mt-3.5" : "pt-3.5 mt-4 sm:mt-5"}`}>
+          <p className="text-[11px] sm:text-xs text-muted-foreground leading-relaxed">
+            Secure, verified agronomy recommendations tailored to your local soil, weather, and seasonal crop cycles.
+          </p>
+        </div>
+      </div>
+    </div>
   );
 }
 
 function AuthPageWrapper() {
-  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-  if (googleClientId) {
-    return (
-      <GoogleOAuthProvider clientId={googleClientId}>
-        <AuthPage />
-      </GoogleOAuthProvider>
-    );
-  }
   return <AuthPage />;
 }
 
 function AuthPage() {
   const navigate = useNavigate();
+  const search = Route.useSearch();
   const { login } = useAppData();
+  const API_URL = getApiUrl();
 
-  // Steps: 'initial' | 'password' | 'create-account' | 'verify-email' | 'otp-login' | 'forgot-password'
-  const [step, setStep] = useState("initial");
+  // Active request token to prevent race conditions and mode snaps
+  const activeRequestRef = useRef(null);
 
-  // Input fields
-  const [identifier, setIdentifier] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [fullName, setFullName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [otp, setOtp] = useState("");
+  // Mode: "login" | "signup" | "verify-otp" | "forgot-password" | "reset-password-otp"
+  const [mode, setMode] = useState(() => {
+    const validModes = ["login", "signup", "verify-otp", "forgot-password", "reset-password-otp"];
+    if (search?.mode && validModes.includes(search.mode)) {
+      return search.mode;
+    }
+    return "login";
+  });
 
-  // Password visibility
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-
-  // Forgot password sub-state: 'email' | 'otp' | 'success'
-  const [forgotStep, setForgotStep] = useState("email");
-  const [forgotOtp, setForgotOtp] = useState("");
-  const [forgotNewPassword, setForgotNewPassword] = useState("");
-  const [forgotConfirmPassword, setForgotConfirmPassword] = useState("");
-
-  // Status & Feedback
-  const [isLoading, setIsLoading] = useState(false);
-  const [apiError, setApiError] = useState("");
-  const [fieldErrors, setFieldErrors] = useState({});
-  const [resendTimer, setResendTimer] = useState(0);
-  const [googleNotice, setGoogleNotice] = useState("");
-
-  const otpInputRef = useRef(null);
-
-  // Resend cooldown timer
   useEffect(() => {
-    if (resendTimer <= 0) return;
+    const validModes = ["login", "signup", "verify-otp", "forgot-password", "reset-password-otp"];
+    if (search?.mode && validModes.includes(search.mode)) {
+      setMode(search.mode);
+    }
+  }, [search?.mode]);
+
+  // Form inputs (Login)
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+
+  // Form inputs (Signup)
+  const [signupName, setSignupName] = useState("");
+  const [signupEmail, setSignupEmail] = useState("");
+  const [signupPassword, setSignupPassword] = useState("");
+  const [signupConfirmPassword, setSignupConfirmPassword] = useState("");
+  const [signupPhone, setSignupPhone] = useState("");
+  const [showSignupPassword, setShowSignupPassword] = useState(false);
+  const [showSignupConfirmPassword, setShowSignupConfirmPassword] = useState(false);
+
+  // OTP State (Signup verification)
+  const [otpCode, setOtpCode] = useState("");
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  // Forgot password & reset state
+  const [forgotEmail, setForgotEmail] = useState(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      return params.get("email") || "";
+    }
+    return "";
+  });
+  const [resetOtpCode, setResetOtpCode] = useState("");
+  const [resetNewPassword, setResetNewPassword] = useState("");
+  const [resetConfirmPassword, setResetConfirmPassword] = useState("");
+  const [showResetPassword, setShowResetPassword] = useState(false);
+  const [showResetConfirmPassword, setShowResetConfirmPassword] = useState(false);
+
+  // Feedback states
+  const [loading, setLoading] = useState(false);
+  const [apiError, setApiError] = useState("");
+  const [apiSuccess, setApiSuccess] = useState("");
+
+  // Input refs for autofocus
+  const loginEmailRef = useRef(null);
+  const signupNameRef = useRef(null);
+  const otpInputRef = useRef(null);
+  const forgotEmailRef = useRef(null);
+  const resetOtpRef = useRef(null);
+
+  // Cooldown timer interval (reliable 1s countdown)
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
     const interval = setInterval(() => {
-      setResendTimer((prev) => (prev <= 1 ? 0 : prev - 1));
+      setResendCooldown((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          return 0;
+        }
+        return prev - 1;
+      });
     }, 1000);
     return () => clearInterval(interval);
-  }, [resendTimer]);
+  }, [resendCooldown > 0]);
 
-  // Focus OTP input on otp steps
+  // Synchronize state with browser Back/Forward (popstate)
   useEffect(() => {
-    if ((step === "verify-email" || step === "otp-login") && otpInputRef.current) {
-      otpInputRef.current.focus();
-    }
-  }, [step]);
-
-  const clearError = (field) => {
-    if (fieldErrors[field]) {
-      setFieldErrors((prev) => {
-        const next = { ...prev };
-        delete next[field];
-        return next;
-      });
-    }
-    setApiError("");
-  };
-
-  const maskEmail = (str) => {
-    if (!str || !str.includes("@")) return str;
-    const [local, domain] = str.split("@");
-    if (local.length <= 2) return `${local[0]}*@${domain}`;
-    return `${local.slice(0, 2)}${"*".repeat(Math.max(1, local.length - 4))}${local.slice(-2)}@${domain}`;
-  };
-
-  // 1. Initial Step: Email / Username Entry
-  const handleInitialSubmit = async (e) => {
-    e.preventDefault();
-    setApiError("");
-    setFieldErrors({});
-
-    const cleanIdentifier = identifier.trim().toLowerCase();
-    if (!cleanIdentifier) {
-      setFieldErrors({ identifier: "Please enter your email or username." });
-      return;
-    }
-
-    setIsLoading(true);
-    const API_URL = getApiUrl();
-
-    try {
-      const res = await fetch(`${API_URL}/auth/check-exists`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: cleanIdentifier }),
-      });
-      const data = await res.json().catch(() => ({}));
-
-      if (data.exists) {
-        // User exists -> go to password login
-        setStep("password");
+    const handlePopState = () => {
+      activeRequestRef.current = null;
+      setApiError("");
+      setApiSuccess("");
+      setLoading(false);
+      const params = new URLSearchParams(window.location.search);
+      const urlMode = params.get("mode") || "login";
+      const stateEmail = window.history.state?.email || params.get("email") || "";
+      if (["login", "signup", "verify-otp", "forgot-password", "reset-password-otp"].includes(urlMode)) {
+        setMode(urlMode);
       } else {
-        // New user -> go to account creation form with pre-filled identifier
-        setStep("create-account");
+        setMode("login");
       }
-    } catch (err) {
-      // If network fails, offer password login or retry
-      setApiError("Unable to reach server. Please check your connection and try again.");
-    } finally {
-      setIsLoading(false);
+      if (stateEmail) {
+        if (urlMode === "signup" || urlMode === "verify-otp") setSignupEmail(stateEmail);
+        else if (urlMode === "forgot-password" || urlMode === "reset-password-otp") setForgotEmail(stateEmail);
+        else if (urlMode === "login") setLoginEmail(stateEmail);
+      }
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  // Mode switcher with history and URL synchronization
+  const switchMode = (newMode, newEmail = null) => {
+    // Invalidate any in-flight request callback to prevent race conditions
+    activeRequestRef.current = null;
+    setApiError("");
+    setApiSuccess("");
+    setLoading(false);
+
+    let resolvedEmail = newEmail;
+    if (resolvedEmail === null) {
+      if (newMode === "forgot-password") {
+        resolvedEmail = forgotEmail || loginEmail;
+        if (loginEmail && !forgotEmail) setForgotEmail(loginEmail);
+      } else if (newMode === "verify-otp") {
+        resolvedEmail = signupEmail;
+      } else if (newMode === "reset-password-otp") {
+        resolvedEmail = forgotEmail;
+      } else if (newMode === "login") {
+        resolvedEmail = loginEmail || forgotEmail;
+      }
+    } else {
+      if (newMode === "signup" || newMode === "verify-otp") setSignupEmail(resolvedEmail);
+      if (newMode === "forgot-password" || newMode === "reset-password-otp") setForgotEmail(resolvedEmail);
+      if (newMode === "login") setLoginEmail(resolvedEmail);
+    }
+
+    setMode(newMode);
+
+    // Sync mode to URL so browser Back/Forward works, but never expose email in query params
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      if (newMode === "login") {
+        url.searchParams.delete("mode");
+      } else {
+        url.searchParams.set("mode", newMode);
+      }
+      // Security: strip plaintext email from URL parameters to prevent PII leakage
+      url.searchParams.delete("email");
+      window.history.pushState({ mode: newMode, email: resolvedEmail }, "", url.toString());
     }
   };
 
-  // 2. Existing User: Password Login
-  const handlePasswordSubmit = async (e) => {
+  // Autofocus according to mode
+  useEffect(() => {
+    if (mode === "login") loginEmailRef.current?.focus();
+    else if (mode === "signup") signupNameRef.current?.focus();
+    else if (mode === "verify-otp") otpInputRef.current?.focus();
+    else if (mode === "forgot-password") forgotEmailRef.current?.focus();
+    else if (mode === "reset-password-otp") resetOtpRef.current?.focus();
+  }, [mode]);
+
+  // Store auth tokens & complete login using AppDataContext login()
+  const completeAuth = (data) => {
+    const accessToken = data.token?.access || data.token;
+    const refreshToken = data.token?.refresh;
+
+    if (accessToken) {
+      localStorage.setItem("krishimitra_token", accessToken);
+      if (typeof login === "function") {
+        login(accessToken);
+      }
+    }
+    if (refreshToken) {
+      localStorage.setItem("krishimitra_refresh_token", refreshToken);
+    }
+    navigate({ to: "/dashboard" });
+  };
+
+  // 1. Handle Direct Password Login
+  const handleLoginSubmit = async (e) => {
     e.preventDefault();
     setApiError("");
-    setFieldErrors({});
+    setApiSuccess("");
 
-    if (!password) {
-      setFieldErrors({ password: "Password is required." });
+    const email = loginEmail.trim().toLowerCase();
+    if (!email || !loginPassword) {
+      setApiError("Please enter your email and password.");
+      return;
+    }
+    if (!isValidEmail(email)) {
+      setApiError("Please enter a valid email address (e.g., name@example.com).");
       return;
     }
 
-    setIsLoading(true);
-    const API_URL = getApiUrl();
+    const reqId = Symbol();
+    activeRequestRef.current = reqId;
+    setLoading(true);
 
     try {
-      const res = await fetch(`${API_URL}/auth/login`, {
+      const res = await fetchWithTimeout(`${API_URL}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: identifier.trim().toLowerCase(),
-          password,
-        }),
+        body: JSON.stringify({ email, password: loginPassword }),
       });
+
       const data = await res.json().catch(() => ({}));
+
+      if (activeRequestRef.current !== reqId) return;
 
       if (!res.ok) {
-        if (res.status === 403 && data.requiresVerification) {
-          // Account unverified -> trigger OTP and route to verify
-          await fetch(`${API_URL}/auth/otp/request`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email: identifier.trim().toLowerCase(), purpose: "login" }),
-          });
-          setResendTimer(60);
-          setStep("otp-login");
+        if (data.accountNotFound) {
+          setApiError(
+            <span>
+              No account found for <strong>{email}</strong>.{" "}
+              <button
+                type="button"
+                onClick={() => {
+                  setSignupEmail(email);
+                  switchMode("signup", email);
+                }}
+                className="font-semibold underline hover:text-foreground cursor-pointer"
+              >
+                Sign up now
+              </button>
+            </span>
+          );
           return;
         }
+
+        if (data.requiresVerification) {
+          setSignupEmail(data.email || email);
+          setApiSuccess("Your email is not verified yet. We are sending you a verification code.");
+          fetchWithTimeout(`${API_URL}/auth/otp/request`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, purpose: "register" }),
+          }).catch(() => {});
+          setResendCooldown(60);
+          switchMode("verify-otp", data.email || email);
+          return;
+        }
+
         throw new Error(data.message || "Invalid email or password.");
       }
 
-      if (data.token) {
-        login(data.token);
-        navigate({ to: "/dashboard" });
-      } else {
-        throw new Error("No token returned by server.");
-      }
+      completeAuth(data);
     } catch (err) {
-      setApiError(err.message || "Sign in failed. Please check your credentials.");
+      if (activeRequestRef.current === reqId) {
+        setApiError(err.message || "Failed to sign in. Please check your credentials.");
+      }
     } finally {
-      setIsLoading(false);
+      if (activeRequestRef.current === reqId) {
+        setLoading(false);
+      }
     }
   };
 
-  // 3. New User: Create Account Submission (validates -> sends OTP)
-  const handleCreateAccountSubmit = async (e) => {
+  // 2. Handle Initial Signup Form Submit -> Send OTP
+  const handleSignupSubmit = async (e) => {
     e.preventDefault();
     setApiError("");
-    const errors = {};
+    setApiSuccess("");
 
-    const cleanName = fullName.trim();
-    const cleanEmail = identifier.trim().toLowerCase();
-    const cleanPhone = phone.trim();
+    const name = signupName.trim();
+    const email = signupEmail.trim().toLowerCase();
+    const phone = signupPhone.trim();
 
-    if (!cleanName || cleanName.length < 2) {
-      errors.fullName = "Full name must be at least 2 characters.";
+    if (!name) {
+      setApiError("Please enter your full name.");
+      return;
     }
-    if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
-      errors.email = "Enter a valid email address.";
+    if (!isValidEmail(email)) {
+      setApiError("Please enter a valid email address (e.g., name@example.com).");
+      return;
     }
-    if (!password || password.length < 6) {
-      errors.password = "Password must be at least 6 characters.";
+    const pwdErr = validatePasswordPolicy(signupPassword);
+    if (pwdErr) {
+      setApiError(pwdErr);
+      return;
     }
-    if (password !== confirmPassword) {
-      errors.confirmPassword = "Passwords do not match.";
-    }
-    if (cleanPhone && !/^\d{10}$/.test(cleanPhone)) {
-      errors.phone = "Enter a valid 10-digit mobile number.";
-    }
-
-    if (Object.keys(errors).length > 0) {
-      setFieldErrors(errors);
+    if (signupPassword !== signupConfirmPassword) {
+      setApiError("Passwords do not match. Please re-enter.");
       return;
     }
 
-    setIsLoading(true);
-    const API_URL = getApiUrl();
+    const reqId = Symbol();
+    activeRequestRef.current = reqId;
+    setLoading(true);
 
     try {
-      // Send 6-digit verification code to email
-      const res = await fetch(`${API_URL}/auth/otp/request`, {
+      const checkRes = await fetchWithTimeout(`${API_URL}/auth/check-exists`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, phone: phone || undefined }),
+      });
+      const checkData = await checkRes.json().catch(() => ({}));
+
+      if (checkData.exists) {
+        throw new Error("An account with this email already exists. Please sign in instead.");
+      }
+
+      const otpRes = await fetchWithTimeout(`${API_URL}/auth/otp/request`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, purpose: "register" }),
+      });
+      const otpData = await otpRes.json().catch(() => ({}));
+
+      if (activeRequestRef.current !== reqId) return;
+
+      if (!otpRes.ok) {
+        if (otpRes.status === 429 && otpData.retryAfter) {
+          setResendCooldown(otpData.retryAfter);
+          switchMode("verify-otp", email);
+          return;
+        }
+        throw new Error(otpData.message || "Failed to send verification code. Please try again.");
+      }
+
+      setResendCooldown(60);
+      switchMode("verify-otp", email);
+      setApiSuccess(`We've sent a 6-digit verification code to ${maskEmail(email)}.`);
+    } catch (err) {
+      if (activeRequestRef.current === reqId) {
+        setApiError(err.message || "An error occurred during registration. Please try again.");
+      }
+    } finally {
+      if (activeRequestRef.current === reqId) {
+        setLoading(false);
+      }
+    }
+  };
+
+  // 3. Handle Email OTP Verification -> Complete Registration
+  const handleVerifyOtpSubmit = async (e) => {
+    e.preventDefault();
+    setApiError("");
+    setApiSuccess("");
+
+    const code = otpCode.trim();
+    if (!code || code.length < 6) {
+      setApiError("Please enter the complete 6-digit verification code.");
+      return;
+    }
+
+    const reqId = Symbol();
+    activeRequestRef.current = reqId;
+    setLoading(true);
+
+    try {
+      const nameParts = signupName.trim().split(" ");
+      const firstName = nameParts[0] || signupName.trim();
+      const lastName = nameParts.slice(1).join(" ");
+
+      const regRes = await fetchWithTimeout(`${API_URL}/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email: cleanEmail,
+          email: signupEmail.trim().toLowerCase(),
+          password: signupPassword,
+          firstName,
+          lastName,
+          phone: signupPhone.trim() || undefined,
+          otp: code,
+          role: "farmer",
+          farmingMode: "moderate",
+        }),
+      });
+
+      const regData = await regRes.json().catch(() => ({}));
+
+      if (activeRequestRef.current !== reqId) return;
+
+      if (!regRes.ok) {
+        throw new Error(regData.message || "Invalid or expired verification code.");
+      }
+
+      completeAuth(regData);
+    } catch (err) {
+      if (activeRequestRef.current === reqId) {
+        setApiError(err.message || "Verification failed. Please try again.");
+      }
+    } finally {
+      if (activeRequestRef.current === reqId) {
+        setLoading(false);
+      }
+    }
+  };
+
+  // Resend OTP for signup
+  const handleResendOtp = async () => {
+    if (resendCooldown > 0 || loading) return;
+    setApiError("");
+    setApiSuccess("");
+    setLoading(true);
+
+    try {
+      const res = await fetchWithTimeout(`${API_URL}/auth/otp/request`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: signupEmail.trim().toLowerCase(),
           purpose: "register",
         }),
       });
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        if (res.status === 429) {
-          const remaining = data.retryAfter || 60;
-          setResendTimer(remaining);
+        if (res.status === 429 && data.retryAfter) {
+          setResendCooldown(data.retryAfter);
+          return;
         }
-        throw new Error(data.message || "Failed to send verification code.");
+        throw new Error(data.message || "Failed to resend code.");
       }
 
-      setResendTimer(60);
-      setOtp("");
-      setStep("verify-email");
+      setResendCooldown(60);
+      setApiSuccess(`A new verification code has been sent to ${maskEmail(signupEmail)}.`);
     } catch (err) {
-      setApiError(err.message || "Could not send verification code. Please try again.");
+      setApiError(err.message || "Unable to resend verification code.");
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
-  // 4. New User: OTP Email Verification & Final Registration
-  const handleVerifyEmailSubmit = async (e) => {
+  // 4. Handle Forgot Password Request
+  const handleForgotPasswordSubmit = async (e) => {
     e.preventDefault();
     setApiError("");
-    setFieldErrors({});
+    setApiSuccess("");
 
-    const cleanOtp = otp.trim();
-    if (!cleanOtp || !/^\d{6}$/.test(cleanOtp)) {
-      setFieldErrors({ otp: "Please enter the complete 6-digit OTP." });
+    const email = forgotEmail.trim().toLowerCase();
+    if (!isValidEmail(email)) {
+      setApiError("Please enter a valid email address (e.g., name@example.com).");
       return;
     }
 
-    setIsLoading(true);
-    const API_URL = getApiUrl();
+    const reqId = Symbol();
+    activeRequestRef.current = reqId;
+    setLoading(true);
 
     try {
-      const cleanName = fullName.trim();
-      const parts = cleanName.split(" ");
-      const firstName = parts[0] || "Farmer";
-      const lastName = parts.slice(1).join(" ") || "";
+      const res = await fetchWithTimeout(`${API_URL}/auth/forgot-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json().catch(() => ({}));
 
-      const res = await fetch(`${API_URL}/auth/register`, {
+      if (activeRequestRef.current !== reqId) return;
+
+      if (!res.ok) {
+        if (res.status === 429 && data.retryAfter) {
+          setResendCooldown(data.retryAfter);
+          switchMode("reset-password-otp", email);
+          setApiError(data.message || `Please wait ${data.retryAfter} seconds before requesting a new code.`);
+          return;
+        }
+        throw new Error(data.message || "Failed to initiate password reset.");
+      }
+
+      setResendCooldown(60);
+      switchMode("reset-password-otp", email);
+      setApiSuccess("If that email is registered, we've sent a 6-digit verification code.");
+    } catch (err) {
+      if (activeRequestRef.current === reqId) {
+        setApiError(err.message || "Unable to process request. Please try again.");
+      }
+    } finally {
+      if (activeRequestRef.current === reqId) {
+        setLoading(false);
+      }
+    }
+  };
+
+  // 5. Handle Reset Password with OTP
+  const handleResetPasswordSubmit = async (e) => {
+    e.preventDefault();
+    setApiError("");
+    setApiSuccess("");
+
+    const code = resetOtpCode.trim();
+    if (!code || code.length < 6) {
+      setApiError("Please enter the complete 6-digit code.");
+      return;
+    }
+    const pwdErr = validatePasswordPolicy(resetNewPassword);
+    if (pwdErr) {
+      setApiError(pwdErr);
+      return;
+    }
+    if (resetNewPassword !== resetConfirmPassword) {
+      setApiError("Passwords do not match. Please re-enter.");
+      return;
+    }
+
+    const reqId = Symbol();
+    activeRequestRef.current = reqId;
+    setLoading(true);
+
+    try {
+      const res = await fetchWithTimeout(`${API_URL}/auth/reset-password`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email: identifier.trim().toLowerCase(),
-          password,
-          name: cleanName,
-          firstName,
-          lastName,
-          phone: phone.trim() || undefined,
-          otp: cleanOtp,
-          role: "farmer",
-          farmingMode: "moderate",
+          email: forgotEmail.trim().toLowerCase(),
+          otp: code,
+          newPassword: resetNewPassword,
         }),
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (activeRequestRef.current !== reqId) return;
+
+      if (!res.ok) {
+        throw new Error(data.message || "Password reset failed. Please check the code and try again.");
+      }
+
+      setLoginEmail(forgotEmail);
+      setLoginPassword("");
+      setResetOtpCode("");
+      setResetNewPassword("");
+      setResetConfirmPassword("");
+      switchMode("login", forgotEmail);
+      setApiSuccess("Password reset successfully! You can now sign in with your new password.");
+    } catch (err) {
+      if (activeRequestRef.current === reqId) {
+        setApiError(err.message || "Password reset failed. Please check the code and try again.");
+      }
+    } finally {
+      if (activeRequestRef.current === reqId) {
+        setLoading(false);
+      }
+    }
+  };
+
+  // 6. Handle Google Credential Response (ID Token)
+  const handleGoogleSuccess = async (idToken) => {
+    setApiError("");
+    setApiSuccess("");
+    setLoading(true);
+
+    try {
+      const res = await fetchWithTimeout(`${API_URL}/auth/google`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ credential: idToken }),
       });
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        throw new Error(data.message || "Verification failed. Please check the code.");
+        throw new Error(data.message || "Google sign-in could not be completed. Please try again.");
       }
 
-      if (data.token) {
-        login(data.token);
-        navigate({ to: "/dashboard" });
-      } else {
-        throw new Error("Missing authentication token.");
-      }
+      completeAuth(data);
     } catch (err) {
-      setApiError(err.message || "Email verification failed.");
+      setApiError(err.message || "Google sign-in could not be completed. Please try again.");
     } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // 5. Existing User: Direct OTP Login Submission
-  const handleOtpLoginSubmit = async (e) => {
-    e.preventDefault();
-    setApiError("");
-    setFieldErrors({});
-
-    const cleanOtp = otp.trim();
-    if (!cleanOtp || !/^\d{6}$/.test(cleanOtp)) {
-      setFieldErrors({ otp: "Please enter the complete 6-digit OTP." });
-      return;
-    }
-
-    setIsLoading(true);
-    const API_URL = getApiUrl();
-
-    try {
-      const res = await fetch(`${API_URL}/auth/otp/verify`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: identifier.trim().toLowerCase(),
-          otp: cleanOtp,
-          purpose: "login",
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        throw new Error(data.message || "Invalid or expired OTP.");
-      }
-
-      if (data.token) {
-        login(data.token);
-        navigate({ to: "/dashboard" });
-      } else {
-        throw new Error("Unable to complete login.");
-      }
-    } catch (err) {
-      setApiError(err.message || "OTP verification failed.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Resend OTP handler for both new & existing users
-  const handleResendOtp = async (purpose = "register") => {
-    if (resendTimer > 0 || isLoading) return;
-    setApiError("");
-    setIsLoading(true);
-    const API_URL = getApiUrl();
-    try {
-      const res = await fetch(`${API_URL}/auth/otp/request`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: identifier.trim().toLowerCase(),
-          purpose,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.message || "Failed to resend OTP.");
-      setResendTimer(60);
-    } catch (err) {
-      setApiError(err.message || "Failed to resend code.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Switch to OTP Login flow
-  const handleRequestOtpLogin = async () => {
-    setApiError("");
-    setIsLoading(true);
-    const API_URL = getApiUrl();
-    try {
-      const res = await fetch(`${API_URL}/auth/otp/request`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: identifier.trim().toLowerCase(),
-          purpose: "login",
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.message || "Failed to send OTP.");
-      setResendTimer(60);
-      setOtp("");
-      setStep("otp-login");
-    } catch (err) {
-      setApiError(err.message || "Could not send OTP.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // 6. Forgot Password Handlers
-  const handleForgotRequestOtp = async (e) => {
-    e.preventDefault();
-    setApiError("");
-    const cleanEmail = identifier.trim().toLowerCase();
-    if (!cleanEmail) {
-      setFieldErrors({ identifier: "Email address is required." });
-      return;
-    }
-    setIsLoading(true);
-    const API_URL = getApiUrl();
-    try {
-      const res = await fetch(`${API_URL}/auth/forgot-password`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: cleanEmail }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.message || "Failed to send reset code.");
-      setForgotStep("otp");
-    } catch (err) {
-      setApiError(err.message || "Failed to send reset code.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleForgotResetPassword = async (e) => {
-    e.preventDefault();
-    setApiError("");
-    if (!forgotOtp.trim()) {
-      setApiError("Please enter the 6-digit reset OTP.");
-      return;
-    }
-    if (!forgotNewPassword || forgotNewPassword.length < 6) {
-      setApiError("New password must be at least 6 characters.");
-      return;
-    }
-    if (forgotNewPassword !== forgotConfirmPassword) {
-      setApiError("Passwords do not match.");
-      return;
-    }
-
-    setIsLoading(true);
-    const API_URL = getApiUrl();
-    try {
-      const res = await fetch(`${API_URL}/auth/reset-password`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: identifier.trim().toLowerCase(),
-          otp: forgotOtp.trim(),
-          newPassword: forgotNewPassword,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.message || "Failed to reset password.");
-      setForgotStep("success");
-    } catch (err) {
-      setApiError(err.message || "Failed to reset password.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // 7. Google OAuth Handlers
-  const handleGoogleSuccess = async (accessToken) => {
-    setIsLoading(true);
-    setApiError("");
-    setGoogleNotice("");
-    const API_URL = getApiUrl();
-    try {
-      const res = await fetch(`${API_URL}/auth/google`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accessToken }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data.message || "Google sign-in failed.");
-      }
-      if (data.token) {
-        login(data.token);
-        navigate({ to: "/dashboard" });
-      } else {
-        throw new Error("No token returned from Google authentication.");
-      }
-    } catch (err) {
-      setApiError(err.message || "Google authentication failed.");
-    } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
   const handleGoogleError = (errorMessage) => {
-    setGoogleNotice(errorMessage);
-    setTimeout(() => setGoogleNotice(""), 6000);
+    setApiError(errorMessage || "Google sign-in was cancelled or encountered an error.");
   };
 
   return (
-    <div className="grid min-h-screen bg-background lg:grid-cols-2 overflow-x-hidden">
-      {/* Left: Authentication Interaction Column */}
-      <div className="hero-ambient relative flex flex-col px-5 py-6 sm:px-10 min-h-screen overflow-y-auto">
-        <div className="flex items-center justify-between w-full">
-          <Link to="/" className="w-fit">
-            <BrandMark />
-          </Link>
+    <div className="min-h-screen bg-background text-foreground flex flex-col justify-between selection:bg-primary selection:text-primary-foreground">
+      {/* Top Navigation Bar */}
+      <header className="w-full border-b border-border bg-surface/80 backdrop-blur-md sticky top-0 z-30 px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between">
+        <Link to="/" className="flex items-center gap-2 group shrink-0">
+          <BrandMark />
+        </Link>
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           <ThemeToggle />
         </div>
+      </header>
 
-        <div className="flex flex-1 items-center justify-center py-8">
-          <div className="w-full max-w-md">
-            {/* Step Navigation Back Button */}
-            {step !== "initial" && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (step === "forgot-password") {
-                    setStep("password");
-                    setForgotStep("email");
-                  } else if (step === "verify-email") {
-                    setStep("create-account");
-                  } else {
-                    setStep("initial");
-                  }
-                  setApiError("");
-                  setFieldErrors({});
-                }}
-                className="mb-4 text-xs font-medium text-muted-foreground hover:text-foreground flex items-center gap-1.5 transition-colors cursor-pointer"
-              >
-                <ArrowLeft className="h-3.5 w-3.5" /> Back
-              </button>
-            )}
+      {/* Main Content Area: Equal-Height Symmetrical Auth Grid */}
+      <main className="flex-1 flex items-center justify-center p-4 sm:p-6 lg:p-10">
+        <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-10 items-stretch justify-center">
 
-            {/* Elevated Auth Card with 5-Level Surface Hierarchy */}
-            <div className="glass-strong rounded-3xl p-6 sm:p-8 shadow-xl border border-border">
-              {/* Notifications & Error Alerts */}
-              {googleNotice && (
-                <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-warning/40 bg-warning/10 px-3.5 py-3 text-xs text-foreground">
-                  <AlertCircle className="h-4 w-4 text-warning mt-0.5 shrink-0" />
-                  <p className="leading-snug">{googleNotice}</p>
+          {/* Left Column: Shared Auth Card Shell */}
+          <div className="flex justify-center lg:justify-end w-full h-full">
+            <div className="w-full max-w-[440px] p-6 sm:p-7 bg-surface border border-border rounded-2xl shadow-card transition-colors duration-150 flex flex-col h-full">
+
+              {/* Status Alert Notifications */}
+              {loading && !apiError && !apiSuccess && (
+                <div className="mb-4 flex items-center gap-3 rounded-xl border border-primary/30 bg-primary/10 p-3.5 text-sm text-primary animate-in fade-in slide-in-from-top-1 shrink-0">
+                  <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+                  <p className="leading-snug font-medium">
+                    {mode === "signup"
+                      ? "Creating your account..."
+                      : mode === "verify-otp"
+                      ? "Verifying code & activating account..."
+                      : mode === "forgot-password"
+                      ? "Sending verification code..."
+                      : mode === "reset-password-otp"
+                      ? "Updating your password..."
+                      : "Signing you in..."}
+                  </p>
                 </div>
               )}
 
               {apiError && (
-                <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-destructive/30 bg-destructive/10 px-3.5 py-3 text-sm text-destructive">
-                  <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-                  <p className="leading-snug text-xs sm:text-sm">{apiError}</p>
+                <div className="mb-4 flex items-start gap-3 rounded-xl border border-error/30 bg-error/10 p-3.5 text-sm text-error animate-in fade-in slide-in-from-top-1 shrink-0">
+                  <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                  <p className="leading-snug">{apiError}</p>
                 </div>
               )}
 
-              {/* ─────────────────────────────────────────────────────────────
-                  STEP 1: INITIAL SCREEN (Email or username first)
-                  ───────────────────────────────────────────────────────────── */}
-              {step === "initial" && (
-                <div>
-                  <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
-                    Welcome to KrishiMitra
-                  </h1>
-                  <p className="mt-1.5 text-sm text-muted-foreground">
-                    Smart farming intelligence for every growing season.
-                  </p>
+              {apiSuccess && (
+                <div className="mb-4 flex items-start gap-3 rounded-xl border border-primary/30 bg-primary/10 p-3.5 text-sm text-primary animate-in fade-in slide-in-from-top-1 shrink-0">
+                  <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
+                  <p className="leading-snug">{apiSuccess}</p>
+                </div>
+              )}
 
-                  <form className="mt-6 space-y-4" onSubmit={handleInitialSubmit}>
-                    <div>
-                      <label
-                        htmlFor="identifier-input"
-                        className="mb-1.5 block text-xs font-medium text-foreground"
-                      >
-                        Email or username
-                      </label>
-                      <div
-                        className={`flex items-center gap-2.5 rounded-xl border px-3.5 py-3 transition-all bg-background/80 focus-within:ring-2 focus-within:ring-primary/20 ${
-                          fieldErrors.identifier
-                            ? "border-destructive focus-within:border-destructive"
-                            : "border-input focus-within:border-primary focus-within:bg-background"
-                        }`}
-                      >
-                        <Mail
-                          className={`h-4 w-4 shrink-0 ${fieldErrors.identifier ? "text-destructive" : "text-muted-foreground"}`}
-                        />
-                        <input
-                          id="identifier-input"
-                          type="text"
-                          name="identifier"
-                          autoFocus
-                          autoComplete="username"
-                          value={identifier}
-                          onChange={(e) => {
-                            setIdentifier(e.target.value);
-                            clearError("identifier");
-                          }}
-                          placeholder="name@example.com or username"
-                          className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/70"
-                        />
-                      </div>
-                      {fieldErrors.identifier && (
-                        <p className="mt-1 flex items-center gap-1 text-[11px] text-destructive">
-                          <AlertCircle className="h-3 w-3 shrink-0" /> {fieldErrors.identifier}
-                        </p>
-                      )}
+              {/* MODES 1 & 2: LOGIN & SIGNUP (Unified layout with persistent Google button) */}
+              {(mode === "login" || mode === "signup") && (
+                <div>
+                  {mode === "login" ? (
+                    <div className="mb-5 sm:mb-6">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-primary/10 text-primary border border-primary/20 mb-2 sm:mb-2.5">
+                        <Sparkles className="h-3 w-3" /> Agri Intelligence
+                      </span>
+                      <h1 className="text-2xl font-bold tracking-tight text-foreground">
+                        Welcome back
+                      </h1>
+                      <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+                        Sign in to your KrishiMitra account.
+                      </p>
                     </div>
+                  ) : (
+                    <div className="mb-3.5">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-primary/10 text-primary border border-primary/20 mb-1.5">
+                        <Sparkles className="h-3 w-3" /> Agri Intelligence
+                      </span>
+                      <h1 className="text-2xl font-bold tracking-tight text-foreground">
+                        Create your account
+                      </h1>
+                      <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
+                        Start growing smarter with KrishiMitra.
+                      </p>
+                    </div>
+                  )}
 
-                    <button
-                      type="submit"
-                      disabled={isLoading}
-                      className="group flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3.5 text-sm font-bold text-primary-foreground shadow-md hover:bg-primary-hover transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-60 cursor-pointer"
-                    >
-                      {isLoading ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin" /> Continuing...
-                        </>
-                      ) : (
-                        <>
-                          Continue
-                          <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-                        </>
-                      )}
-                    </button>
-                  </form>
-
-                  {/* Divider */}
-                  <div className="relative my-6 flex items-center justify-center">
-                    <div className="w-full border-t border-border" />
-                    <span className="absolute bg-surface px-3 text-xs uppercase tracking-wider text-muted-foreground font-medium">
-                      or
-                    </span>
-                  </div>
-
-                  {/* Google OAuth Button */}
-                  <GoogleAuthButton
-                    onStart={() => setIsLoading(true)}
-                    onSuccess={handleGoogleSuccess}
-                    onError={handleGoogleError}
-                    disabled={isLoading}
-                  />
-
-                  {/* Direct New User Switch */}
-                  <div className="mt-6 text-center text-xs text-muted-foreground">
-                    New to KrishiMitra?{" "}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setStep("create-account");
-                        setApiError("");
-                        setFieldErrors({});
-                      }}
-                      className="font-semibold text-primary hover:underline cursor-pointer"
-                    >
-                      Create account
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* ─────────────────────────────────────────────────────────────
-                  STEP 2: EXISTING USER PASSWORD LOGIN
-                  ───────────────────────────────────────────────────────────── */}
-              {step === "password" && (
-                <div>
-                  <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
-                    Welcome back
-                  </h1>
-                  <p className="mt-1.5 text-sm text-muted-foreground">
-                    Sign in to your account for{" "}
-                    <span className="font-semibold text-foreground">{identifier}</span>.
-                  </p>
-
-                  <form className="mt-6 space-y-4" onSubmit={handlePasswordSubmit}>
-                    <div>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <label
-                          htmlFor="password-input"
-                          className="block text-xs font-medium text-foreground"
-                        >
-                          Password
+                  {mode === "login" ? (
+                    <form onSubmit={handleLoginSubmit} className="space-y-4">
+                      <div>
+                        <label className="block text-xs font-medium text-foreground mb-1.5">
+                          Email
                         </label>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setStep("forgot-password");
-                            setForgotStep("email");
-                            setApiError("");
-                          }}
-                          className="text-xs text-muted-foreground hover:text-primary transition-colors cursor-pointer"
-                        >
-                          Forgot password?
-                        </button>
+                        <div className="relative">
+                          <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                          <input
+                            ref={loginEmailRef}
+                            type="email"
+                            autoComplete="email"
+                            required
+                            value={loginEmail}
+                            onChange={(e) => setLoginEmail(e.target.value)}
+                            placeholder="farmer@example.com"
+                            className="w-full rounded-xl border border-border bg-surface pl-10 pr-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary transition-all"
+                          />
+                        </div>
                       </div>
-                      <div
-                        className={`flex items-center gap-2.5 rounded-xl border px-3.5 py-3 transition-all bg-background/80 focus-within:ring-2 focus-within:ring-primary/20 ${
-                          fieldErrors.password
-                            ? "border-destructive focus-within:border-destructive"
-                            : "border-input focus-within:border-primary focus-within:bg-background"
-                        }`}
+
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="text-xs font-medium text-foreground">
+                            Password
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => switchMode("forgot-password")}
+                            className="text-xs font-medium text-primary hover:underline cursor-pointer"
+                          >
+                            Forgot password?
+                          </button>
+                        </div>
+                        <div className="relative">
+                          <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                          <input
+                            type={showLoginPassword ? "text" : "password"}
+                            autoComplete="current-password"
+                            required
+                            value={loginPassword}
+                            onChange={(e) => setLoginPassword(e.target.value)}
+                            placeholder="••••••••"
+                            className="w-full rounded-xl border border-border bg-surface pl-10 pr-10 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary transition-all"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowLoginPassword(!showLoginPassword)}
+                            className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                            aria-label={showLoginPassword ? "Hide password" : "Show password"}
+                          >
+                            {showLoginPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={loading}
+                        className="w-full flex items-center justify-center gap-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-semibold py-2.5 px-4 text-sm transition-all shadow-sm cursor-pointer disabled:opacity-50 mt-2"
                       >
-                        <Lock
-                          className={`h-4 w-4 shrink-0 ${fieldErrors.password ? "text-destructive" : "text-muted-foreground"}`}
-                        />
-                        <input
-                          id="password-input"
-                          type={showPassword ? "text" : "password"}
-                          name="password"
-                          autoFocus
-                          autoComplete="current-password"
-                          value={password}
-                          onChange={(e) => {
-                            setPassword(e.target.value);
-                            clearError("password");
-                          }}
-                          placeholder="Enter your password"
-                          className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/70"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowPassword((prev) => !prev)}
-                          className="shrink-0 text-muted-foreground hover:text-foreground cursor-pointer"
-                          aria-label={showPassword ? "Hide password" : "Show password"}
-                        >
-                          {showPassword ? (
-                            <EyeOff className="h-4 w-4" />
-                          ) : (
-                            <Eye className="h-4 w-4" />
-                          )}
-                        </button>
+                        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Sign in"}
+                      </button>
+                    </form>
+                  ) : (
+                    <form onSubmit={handleSignupSubmit} className="space-y-2.5">
+                      <div>
+                        <label className="block text-xs font-medium text-foreground mb-1">
+                          Full name *
+                        </label>
+                        <div className="relative">
+                          <UserRound className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                          <input
+                            ref={signupNameRef}
+                            type="text"
+                            autoComplete="name"
+                            required
+                            value={signupName}
+                            onChange={(e) => setSignupName(e.target.value)}
+                            placeholder="Ramesh Patel"
+                            className="w-full rounded-xl border border-border bg-surface pl-10 pr-4 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary transition-all"
+                          />
+                        </div>
                       </div>
-                      {fieldErrors.password && (
-                        <p className="mt-1 flex items-center gap-1 text-[11px] text-destructive">
-                          <AlertCircle className="h-3 w-3 shrink-0" /> {fieldErrors.password}
-                        </p>
-                      )}
+
+                      <div>
+                        <label className="block text-xs font-medium text-foreground mb-1">
+                          Email *
+                        </label>
+                        <div className="relative">
+                          <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                          <input
+                            type="email"
+                            autoComplete="email"
+                            required
+                            value={signupEmail}
+                            onChange={(e) => setSignupEmail(e.target.value)}
+                            placeholder="farmer@example.com"
+                            className="w-full rounded-xl border border-border bg-surface pl-10 pr-4 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary transition-all"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <div>
+                          <label className="block text-xs font-medium text-foreground mb-1">
+                            Password *
+                          </label>
+                          <div className="relative">
+                            <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                            <input
+                              type={showSignupPassword ? "text" : "password"}
+                              autoComplete="new-password"
+                              required
+                              value={signupPassword}
+                              onChange={(e) => setSignupPassword(e.target.value)}
+                              placeholder="••••••••"
+                              className="w-full rounded-xl border border-border bg-surface pl-10 pr-9 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary transition-all"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowSignupPassword(!showSignupPassword)}
+                              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                              aria-label={showSignupPassword ? "Hide password" : "Show password"}
+                            >
+                              {showSignupPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-medium text-foreground mb-1">
+                            Confirm password *
+                          </label>
+                          <div className="relative">
+                            <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                            <input
+                              type={showSignupConfirmPassword ? "text" : "password"}
+                              autoComplete="new-password"
+                              required
+                              value={signupConfirmPassword}
+                              onChange={(e) => setSignupConfirmPassword(e.target.value)}
+                              placeholder="••••••••"
+                              className="w-full rounded-xl border border-border bg-surface pl-10 pr-9 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary transition-all"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowSignupConfirmPassword(!showSignupConfirmPassword)}
+                              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                              aria-label={showSignupConfirmPassword ? "Hide password" : "Show password"}
+                            >
+                              {showSignupConfirmPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-foreground mb-1">
+                          Mobile number <span className="text-muted-foreground font-normal">(optional)</span>
+                        </label>
+                        <div className="relative">
+                          <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                          <input
+                            type="tel"
+                            autoComplete="tel"
+                            value={signupPhone}
+                            onChange={(e) => setSignupPhone(e.target.value)}
+                            placeholder="9876543210"
+                            className="w-full rounded-xl border border-border bg-surface pl-10 pr-4 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary transition-all"
+                          />
+                        </div>
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={loading}
+                        className="w-full flex items-center justify-center gap-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-semibold py-2.5 px-4 text-sm transition-all shadow-sm cursor-pointer disabled:opacity-50 mt-1"
+                      >
+                        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create account"}
+                      </button>
+                    </form>
+                  )}
+
+                  {/* Stable Bottom Section: Divider, Persistent Google Auth & Account Switching Footer */}
+                  <div className={mode === "login" ? "mt-4 sm:mt-5" : "mt-3.5 sm:mt-4"}>
+                    <div className={mode === "login" ? "relative mb-4" : "relative mb-3.5"}>
+                      <div className="absolute inset-0 flex items-center">
+                        <div className="w-full border-t border-border" />
+                      </div>
+                      <div className="relative flex justify-center text-xs uppercase">
+                        <span className="bg-surface px-3 text-muted-foreground font-medium">
+                          OR
+                        </span>
+                      </div>
                     </div>
 
-                    <button
-                      type="submit"
-                      disabled={isLoading}
-                      className="group flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3.5 text-sm font-bold text-primary-foreground shadow-md hover:bg-primary-hover transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-60 cursor-pointer"
-                    >
-                      {isLoading ? (
+                    {/* Google Sign In (Preserved across login and signup) */}
+                    <GoogleAuthSection
+                      onSuccess={handleGoogleSuccess}
+                      onError={handleGoogleError}
+                      disabled={loading}
+                    />
+
+                    {/* Account-Switching Footer (Visually connected directly below Google button with 16-20px spacing) */}
+                    <p className={mode === "login" ? "mt-4.5 sm:mt-5 text-center text-xs text-muted-foreground" : "mt-4 text-center text-xs text-muted-foreground"}>
+                      {mode === "login" ? (
                         <>
-                          <Loader2 className="h-4 w-4 animate-spin" /> Signing in...
+                          Don't have an account?{" "}
+                          <button
+                            type="button"
+                            onClick={() => switchMode("signup")}
+                            className="font-semibold text-primary hover:underline cursor-pointer"
+                          >
+                            Sign up
+                          </button>
                         </>
                       ) : (
                         <>
-                          Sign in
-                          <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                          Already have an account?{" "}
+                          <button
+                            type="button"
+                            onClick={() => switchMode("login")}
+                            className="font-semibold text-primary hover:underline cursor-pointer"
+                          >
+                            Sign in
+                          </button>
                         </>
                       )}
-                    </button>
-                  </form>
-
-                  {/* Passwordless OTP alternative */}
-                  <div className="mt-4 pt-3 border-t border-border/60 text-center">
-                    <button
-                      type="button"
-                      onClick={handleRequestOtpLogin}
-                      disabled={isLoading}
-                      className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors cursor-pointer"
-                    >
-                      <KeyRound className="h-3.5 w-3.5" /> Sign in with OTP code instead
-                    </button>
+                    </p>
                   </div>
-
-                  {/* Divider */}
-                  <div className="relative my-5 flex items-center justify-center">
-                    <div className="w-full border-t border-border" />
-                    <span className="absolute bg-surface px-3 text-xs uppercase tracking-wider text-muted-foreground font-medium">
-                      or
-                    </span>
-                  </div>
-
-                  {/* Google OAuth Button */}
-                  <GoogleAuthButton
-                    onStart={() => setIsLoading(true)}
-                    onSuccess={handleGoogleSuccess}
-                    onError={handleGoogleError}
-                    disabled={isLoading}
-                  />
                 </div>
               )}
 
-              {/* ─────────────────────────────────────────────────────────────
-                  STEP 3: NEW USER REGISTRATION FORM
-                  ───────────────────────────────────────────────────────────── */}
-              {step === "create-account" && (
-                <div>
-                  <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
-                    Create your KrishiMitra account
-                  </h1>
-                  <p className="mt-1.5 text-sm text-muted-foreground">
-                    Start AI-powered farm planning in minutes.
-                  </p>
-
-                  <form className="mt-6 space-y-3.5" onSubmit={handleCreateAccountSubmit}>
-                    {/* Full Name */}
-                    <div>
-                      <label
-                        htmlFor="fullname-input"
-                        className="mb-1 block text-xs font-medium text-foreground"
+              {/* MODE 3: VERIFY EMAIL OTP */}
+              {mode === "verify-otp" && (
+                <div className="flex-1 flex flex-col justify-between h-full">
+                  <div>
+                    <div className="mb-6">
+                      <button
+                        type="button"
+                        onClick={() => switchMode("signup")}
+                        className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground mb-3 transition-colors cursor-pointer"
                       >
-                        Full Name <span className="text-primary">*</span>
-                      </label>
-                      <div
-                        className={`flex items-center gap-2.5 rounded-xl border px-3.5 py-2.5 transition-all bg-background/80 focus-within:ring-2 focus-within:ring-primary/20 ${
-                          fieldErrors.fullName
-                            ? "border-destructive focus-within:border-destructive"
-                            : "border-input focus-within:border-primary focus-within:bg-background"
-                        }`}
-                      >
-                        <UserRound
-                          className={`h-4 w-4 shrink-0 ${fieldErrors.fullName ? "text-destructive" : "text-muted-foreground"}`}
-                        />
-                        <input
-                          id="fullname-input"
-                          type="text"
-                          name="fullName"
-                          autoFocus
-                          autoComplete="name"
-                          value={fullName}
-                          onChange={(e) => {
-                            setFullName(e.target.value);
-                            clearError("fullName");
-                          }}
-                          placeholder="e.g. Ramesh Patil"
-                          className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/70"
-                        />
-                      </div>
-                      {fieldErrors.fullName && (
-                        <p className="mt-1 flex items-center gap-1 text-[11px] text-destructive">
-                          <AlertCircle className="h-3 w-3 shrink-0" /> {fieldErrors.fullName}
-                        </p>
-                      )}
+                        <ArrowLeft className="h-3.5 w-3.5" /> Back to edit details
+                      </button>
+                      <h1 className="text-2xl font-bold tracking-tight text-foreground">
+                        Verify your email
+                      </h1>
+                      <p className="text-sm text-muted-foreground mt-1.5">
+                        We sent a 6-digit verification code to{" "}
+                        <span className="font-semibold text-foreground">{maskEmail(signupEmail)}</span>
+                      </p>
                     </div>
 
-                    {/* Email */}
-                    <div>
-                      <label
-                        htmlFor="email-input"
-                        className="mb-1 block text-xs font-medium text-foreground"
-                      >
-                        Email Address <span className="text-primary">*</span>
-                      </label>
-                      <div
-                        className={`flex items-center gap-2.5 rounded-xl border px-3.5 py-2.5 transition-all bg-background/80 focus-within:ring-2 focus-within:ring-primary/20 ${
-                          fieldErrors.email
-                            ? "border-destructive focus-within:border-destructive"
-                            : "border-input focus-within:border-primary focus-within:bg-background"
-                        }`}
-                      >
-                        <Mail
-                          className={`h-4 w-4 shrink-0 ${fieldErrors.email ? "text-destructive" : "text-muted-foreground"}`}
-                        />
-                        <input
-                          id="email-input"
-                          type="email"
-                          name="email"
-                          autoComplete="email"
-                          value={identifier}
-                          onChange={(e) => {
-                            setIdentifier(e.target.value);
-                            clearError("email");
-                          }}
-                          placeholder="you@example.com"
-                          className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/70"
-                        />
+                    <form onSubmit={handleVerifyOtpSubmit} className="space-y-4">
+                      <div>
+                        <label className="block text-xs font-medium text-foreground mb-1.5">
+                          Verification Code (OTP)
+                        </label>
+                        <div className="relative">
+                          <KeyRound className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                          <input
+                            ref={otpInputRef}
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            maxLength={6}
+                            autoComplete="one-time-code"
+                            required
+                            value={otpCode}
+                            onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
+                            placeholder="123456"
+                            className="w-full tracking-widest text-center text-lg font-mono font-bold rounded-xl border border-border bg-surface pl-10 pr-4 py-2.5 text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary transition-all"
+                          />
+                        </div>
                       </div>
-                      {fieldErrors.email && (
-                        <p className="mt-1 flex items-center gap-1 text-[11px] text-destructive">
-                          <AlertCircle className="h-3 w-3 shrink-0" /> {fieldErrors.email}
-                        </p>
-                      )}
-                    </div>
 
-                    {/* Password */}
-                    <div>
-                      <label
-                        htmlFor="new-password-input"
-                        className="mb-1 block text-xs font-medium text-foreground"
+                      <button
+                        type="submit"
+                        disabled={loading || otpCode.length < 6}
+                        className="w-full flex items-center justify-center gap-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-semibold py-2.5 px-4 text-sm transition-all shadow-sm cursor-pointer disabled:opacity-50 mt-2"
                       >
-                        Password <span className="text-primary">*</span>
-                      </label>
-                      <div
-                        className={`flex items-center gap-2.5 rounded-xl border px-3.5 py-2.5 transition-all bg-background/80 focus-within:ring-2 focus-within:ring-primary/20 ${
-                          fieldErrors.password
-                            ? "border-destructive focus-within:border-destructive"
-                            : "border-input focus-within:border-primary focus-within:bg-background"
-                        }`}
-                      >
-                        <Lock
-                          className={`h-4 w-4 shrink-0 ${fieldErrors.password ? "text-destructive" : "text-muted-foreground"}`}
-                        />
-                        <input
-                          id="new-password-input"
-                          type={showPassword ? "text" : "password"}
-                          name="password"
-                          autoComplete="new-password"
-                          value={password}
-                          onChange={(e) => {
-                            setPassword(e.target.value);
-                            clearError("password");
-                          }}
-                          placeholder="At least 6 characters"
-                          className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/70"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowPassword((p) => !p)}
-                          className="shrink-0 text-muted-foreground hover:text-foreground cursor-pointer"
-                        >
-                          {showPassword ? (
-                            <EyeOff className="h-4 w-4" />
-                          ) : (
-                            <Eye className="h-4 w-4" />
-                          )}
-                        </button>
-                      </div>
-                      {fieldErrors.password && (
-                        <p className="mt-1 flex items-center gap-1 text-[11px] text-destructive">
-                          <AlertCircle className="h-3 w-3 shrink-0" /> {fieldErrors.password}
-                        </p>
-                      )}
-                    </div>
+                        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Verify email"}
+                      </button>
+                    </form>
+                  </div>
 
-                    {/* Confirm Password */}
-                    <div>
-                      <label
-                        htmlFor="confirm-password-input"
-                        className="mb-1 block text-xs font-medium text-foreground"
-                      >
-                        Confirm Password <span className="text-primary">*</span>
-                      </label>
-                      <div
-                        className={`flex items-center gap-2.5 rounded-xl border px-3.5 py-2.5 transition-all bg-background/80 focus-within:ring-2 focus-within:ring-primary/20 ${
-                          fieldErrors.confirmPassword
-                            ? "border-destructive focus-within:border-destructive"
-                            : "border-input focus-within:border-primary focus-within:bg-background"
-                        }`}
-                      >
-                        <Lock
-                          className={`h-4 w-4 shrink-0 ${fieldErrors.confirmPassword ? "text-destructive" : "text-muted-foreground"}`}
-                        />
-                        <input
-                          id="confirm-password-input"
-                          type={showConfirmPassword ? "text" : "password"}
-                          name="confirmPassword"
-                          autoComplete="new-password"
-                          value={confirmPassword}
-                          onChange={(e) => {
-                            setConfirmPassword(e.target.value);
-                            clearError("confirmPassword");
-                          }}
-                          placeholder="Repeat password"
-                          className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/70"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowConfirmPassword((p) => !p)}
-                          className="shrink-0 text-muted-foreground hover:text-foreground cursor-pointer"
-                        >
-                          {showConfirmPassword ? (
-                            <EyeOff className="h-4 w-4" />
-                          ) : (
-                            <Eye className="h-4 w-4" />
-                          )}
-                        </button>
-                      </div>
-                      {fieldErrors.confirmPassword && (
-                        <p className="mt-1 flex items-center gap-1 text-[11px] text-destructive">
-                          <AlertCircle className="h-3 w-3 shrink-0" /> {fieldErrors.confirmPassword}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Mobile (optional) */}
-                    <div>
-                      <label
-                        htmlFor="phone-input"
-                        className="mb-1 block text-xs font-medium text-foreground"
-                      >
-                        Mobile Number{" "}
-                        <span className="text-muted-foreground font-normal">(optional)</span>
-                      </label>
-                      <div
-                        className={`flex items-center gap-2.5 rounded-xl border px-3.5 py-2.5 transition-all bg-background/80 focus-within:ring-2 focus-within:ring-primary/20 ${
-                          fieldErrors.phone
-                            ? "border-destructive focus-within:border-destructive"
-                            : "border-input focus-within:border-primary focus-within:bg-background"
-                        }`}
-                      >
-                        <Phone
-                          className={`h-4 w-4 shrink-0 ${fieldErrors.phone ? "text-destructive" : "text-muted-foreground"}`}
-                        />
-                        <input
-                          id="phone-input"
-                          type="tel"
-                          name="phone"
-                          maxLength={10}
-                          autoComplete="tel"
-                          value={phone}
-                          onChange={(e) => {
-                            const clean = e.target.value.replace(/\D/g, "");
-                            setPhone(clean);
-                            clearError("phone");
-                          }}
-                          placeholder="10-digit number"
-                          className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/70"
-                        />
-                      </div>
-                      {fieldErrors.phone && (
-                        <p className="mt-1 flex items-center gap-1 text-[11px] text-destructive">
-                          <AlertCircle className="h-3 w-3 shrink-0" /> {fieldErrors.phone}
-                        </p>
-                      )}
-                    </div>
-
-                    <button
-                      type="submit"
-                      disabled={isLoading}
-                      className="group flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3.5 text-sm font-bold text-primary-foreground shadow-md hover:bg-primary-hover transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-60 cursor-pointer"
-                    >
-                      {isLoading ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin" /> Sending verification code...
-                        </>
-                      ) : (
-                        <>
-                          Create account
-                          <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-                        </>
-                      )}
-                    </button>
-                  </form>
-
-                  <div className="mt-4 text-center text-xs text-muted-foreground">
-                    Already have an account?{" "}
+                  <div className="mt-6 flex items-center justify-between text-xs border-t border-border pt-3.5 shrink-0">
                     <button
                       type="button"
-                      onClick={() => {
-                        setStep("password");
-                        setApiError("");
-                        setFieldErrors({});
-                      }}
-                      className="font-semibold text-primary hover:underline cursor-pointer"
+                      onClick={handleResendOtp}
+                      disabled={resendCooldown > 0 || loading}
+                      className="font-medium text-xs sm:text-sm text-primary hover:underline disabled:text-muted-foreground disabled:no-underline disabled:cursor-not-allowed transition-colors"
+                    >
+                      {resendCooldown > 0 ? `Resend OTP in ${resendCooldown}s` : "Resend OTP"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => switchMode("signup")}
+                      className="text-muted-foreground hover:text-foreground cursor-pointer text-xs sm:text-sm"
+                    >
+                      Change email
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* MODE 4: FORGOT PASSWORD */}
+              {mode === "forgot-password" && (
+                <div className="flex-1 flex flex-col justify-between h-full">
+                  <div>
+                    <div className="mb-6">
+                      <button
+                        type="button"
+                        onClick={() => switchMode("login")}
+                        className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground mb-3 transition-colors cursor-pointer"
+                      >
+                        <ArrowLeft className="h-3.5 w-3.5" /> Back to sign in
+                      </button>
+                      <h1 className="text-2xl font-bold tracking-tight text-foreground">
+                        Reset your password
+                      </h1>
+                      <p className="text-sm text-muted-foreground mt-1.5">
+                        Enter your email address and we'll send a verification code to reset your password.
+                      </p>
+                    </div>
+
+                    <form onSubmit={handleForgotPasswordSubmit} className="space-y-4">
+                      <div>
+                        <label className="block text-xs font-medium text-foreground mb-1.5">
+                          Account Email
+                        </label>
+                        <div className="relative">
+                          <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                          <input
+                            ref={forgotEmailRef}
+                            type="email"
+                            autoComplete="email"
+                            required
+                            value={forgotEmail}
+                            onChange={(e) => setForgotEmail(e.target.value)}
+                            placeholder="farmer@example.com"
+                            className="w-full rounded-xl border border-border bg-surface pl-10 pr-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary transition-all"
+                          />
+                        </div>
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={loading}
+                        className="w-full flex items-center justify-center gap-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-semibold py-2.5 px-4 text-sm transition-all shadow-sm cursor-pointer disabled:opacity-50 mt-2"
+                      >
+                        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Send verification code"}
+                      </button>
+                    </form>
+                  </div>
+
+                  <div className="mt-6 flex items-center justify-center text-xs border-t border-border pt-3.5 text-muted-foreground shrink-0">
+                    Remember your password?{" "}
+                    <button
+                      type="button"
+                      onClick={() => switchMode("login")}
+                      className="ml-1 font-semibold text-primary hover:underline cursor-pointer"
                     >
                       Sign in
                     </button>
@@ -1170,437 +1352,151 @@ function AuthPage() {
                 </div>
               )}
 
-              {/* ─────────────────────────────────────────────────────────────
-                  STEP 4: VERIFY EMAIL OTP (New Registration)
-                  ───────────────────────────────────────────────────────────── */}
-              {step === "verify-email" && (
-                <div>
-                  <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
-                    Verify your email
-                  </h1>
-                  <p className="mt-1.5 text-sm text-muted-foreground break-words">
-                    We sent a 6-digit verification code to{" "}
-                    <span className="font-semibold text-foreground">{maskEmail(identifier)}</span>.
-                  </p>
-
-                  <form className="mt-6 space-y-4" onSubmit={handleVerifyEmailSubmit}>
-                    <div>
-                      <label
-                        htmlFor="otp-verify-input"
-                        className="mb-1.5 block text-xs font-medium text-foreground"
-                      >
-                        Enter 6-Digit Code
-                      </label>
-                      <input
-                        id="otp-verify-input"
-                        ref={otpInputRef}
-                        type="text"
-                        inputMode="numeric"
-                        maxLength={6}
-                        autoFocus
-                        value={otp}
-                        onChange={(e) => {
-                          const val = e.target.value.replace(/\D/g, "");
-                          setOtp(val);
-                          clearError("otp");
-                        }}
-                        placeholder="••••••"
-                        className={`w-full rounded-xl border bg-background/80 px-3.5 py-3.5 text-center font-mono text-2xl font-bold tracking-[0.4em] text-foreground outline-none transition-all focus:ring-2 focus:ring-primary/20 ${
-                          fieldErrors.otp
-                            ? "border-destructive focus:border-destructive"
-                            : "border-input focus:border-primary focus:bg-background"
-                        }`}
-                      />
-                      {fieldErrors.otp && (
-                        <p className="mt-1 flex items-center justify-center gap-1 text-[11px] text-destructive">
-                          <AlertCircle className="h-3 w-3 shrink-0" /> {fieldErrors.otp}
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="flex items-center justify-between text-xs pt-1">
+              {/* MODE 5: RESET PASSWORD WITH OTP */}
+              {mode === "reset-password-otp" && (
+                <div className="flex-1 flex flex-col justify-between h-full">
+                  <div>
+                    <div className="mb-5">
                       <button
                         type="button"
-                        disabled={resendTimer > 0 || isLoading}
-                        onClick={() => handleResendOtp("register")}
-                        className={`font-medium transition-colors ${
-                          resendTimer > 0
-                            ? "text-muted-foreground cursor-not-allowed"
-                            : "text-primary hover:underline cursor-pointer"
-                        }`}
+                        onClick={() => switchMode("forgot-password")}
+                        className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground mb-2.5 transition-colors cursor-pointer"
                       >
-                        {resendTimer > 0 ? `Resend code in ${resendTimer}s` : "Resend code"}
+                        <ArrowLeft className="h-3.5 w-3.5" /> Change email
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setStep("create-account");
-                          setOtp("");
-                          setApiError("");
-                        }}
-                        className="text-muted-foreground hover:text-foreground hover:underline cursor-pointer"
-                      >
-                        Change details
-                      </button>
-                    </div>
-
-                    <button
-                      type="submit"
-                      disabled={isLoading || otp.length !== 6}
-                      className="group flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3.5 text-sm font-bold text-primary-foreground shadow-md hover:bg-primary-hover transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 cursor-pointer"
-                    >
-                      {isLoading ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin" /> Verifying email...
-                        </>
-                      ) : (
-                        <>
-                          Verify email
-                          <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-                        </>
-                      )}
-                    </button>
-                  </form>
-                </div>
-              )}
-
-              {/* ─────────────────────────────────────────────────────────────
-                  STEP 5: DIRECT OTP LOGIN (For returning user requesting OTP)
-                  ───────────────────────────────────────────────────────────── */}
-              {step === "otp-login" && (
-                <div>
-                  <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
-                    Sign in with Code
-                  </h1>
-                  <p className="mt-1.5 text-sm text-muted-foreground break-words">
-                    We sent a 6-digit sign-in code to{" "}
-                    <span className="font-semibold text-foreground">{maskEmail(identifier)}</span>.
-                  </p>
-
-                  <form className="mt-6 space-y-4" onSubmit={handleOtpLoginSubmit}>
-                    <div>
-                      <label
-                        htmlFor="otp-login-input"
-                        className="mb-1.5 block text-xs font-medium text-foreground"
-                      >
-                        Enter 6-Digit Code
-                      </label>
-                      <input
-                        id="otp-login-input"
-                        ref={otpInputRef}
-                        type="text"
-                        inputMode="numeric"
-                        maxLength={6}
-                        autoFocus
-                        value={otp}
-                        onChange={(e) => {
-                          const val = e.target.value.replace(/\D/g, "");
-                          setOtp(val);
-                          clearError("otp");
-                        }}
-                        placeholder="••••••"
-                        className={`w-full rounded-xl border bg-background/80 px-3.5 py-3.5 text-center font-mono text-2xl font-bold tracking-[0.4em] text-foreground outline-none transition-all focus:ring-2 focus:ring-primary/20 ${
-                          fieldErrors.otp
-                            ? "border-destructive focus:border-destructive"
-                            : "border-input focus:border-primary focus:bg-background"
-                        }`}
-                      />
-                      {fieldErrors.otp && (
-                        <p className="mt-1 flex items-center justify-center gap-1 text-[11px] text-destructive">
-                          <AlertCircle className="h-3 w-3 shrink-0" /> {fieldErrors.otp}
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="flex items-center justify-between text-xs pt-1">
-                      <button
-                        type="button"
-                        disabled={resendTimer > 0 || isLoading}
-                        onClick={() => handleResendOtp("login")}
-                        className={`font-medium transition-colors ${
-                          resendTimer > 0
-                            ? "text-muted-foreground cursor-not-allowed"
-                            : "text-primary hover:underline cursor-pointer"
-                        }`}
-                      >
-                        {resendTimer > 0 ? `Resend code in ${resendTimer}s` : "Resend code"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setStep("password");
-                          setOtp("");
-                          setApiError("");
-                        }}
-                        className="text-muted-foreground hover:text-foreground hover:underline cursor-pointer"
-                      >
-                        Use password instead
-                      </button>
-                    </div>
-
-                    <button
-                      type="submit"
-                      disabled={isLoading || otp.length !== 6}
-                      className="group flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3.5 text-sm font-bold text-primary-foreground shadow-md hover:bg-primary-hover transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 cursor-pointer"
-                    >
-                      {isLoading ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin" /> Verifying...
-                        </>
-                      ) : (
-                        <>
-                          Sign in
-                          <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-                        </>
-                      )}
-                    </button>
-                  </form>
-                </div>
-              )}
-
-              {/* ─────────────────────────────────────────────────────────────
-                  STEP 6: FORGOT PASSWORD RECOVERY
-                  ───────────────────────────────────────────────────────────── */}
-              {step === "forgot-password" && (
-                <div>
-                  {forgotStep === "success" ? (
-                    <div className="rounded-2xl border border-primary/30 bg-primary/10 p-5 text-center">
-                      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/20 text-primary mb-3">
-                        <CheckCircle2 className="h-6 w-6" />
-                      </div>
-                      <h2 className="font-display text-lg font-bold text-foreground">
-                        Password updated successfully
-                      </h2>
-                      <p className="mt-1.5 text-xs text-muted-foreground leading-relaxed">
-                        Your password has been changed. You can now sign in with your new
-                        credentials.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setStep("password");
-                          setForgotStep("email");
-                          setPassword("");
-                        }}
-                        className="mt-5 w-full rounded-xl bg-primary py-3 text-sm font-bold text-primary-foreground shadow-md hover:bg-primary-hover transition-all cursor-pointer"
-                      >
-                        Return to Sign In
-                      </button>
-                    </div>
-                  ) : forgotStep === "otp" ? (
-                    <div>
-                      <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
-                        Set new password
+                      <h1 className="text-2xl font-bold tracking-tight text-foreground">
+                        Enter new password
                       </h1>
-                      <p className="mt-1.5 text-sm text-muted-foreground">
-                        Enter the recovery code sent to{" "}
-                        <span className="font-semibold text-foreground">
-                          {maskEmail(identifier)}
-                        </span>{" "}
-                        and choose a new password.
+                      <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+                        Enter the 6-digit code sent to{" "}
+                        <span className="font-semibold text-foreground">{maskEmail(forgotEmail)}</span> and choose a new password.
                       </p>
+                    </div>
 
-                      <form onSubmit={handleForgotResetPassword} className="mt-6 space-y-4">
-                        <div>
-                          <label
-                            htmlFor="forgot-otp-input"
-                            className="mb-1 block text-xs font-medium text-foreground"
-                          >
-                            6-Digit Recovery Code
-                          </label>
+                    <form onSubmit={handleResetPasswordSubmit} className="space-y-3.5">
+                      <div>
+                        <label className="block text-xs font-medium text-foreground mb-1">
+                          6-Digit Code
+                        </label>
+                        <div className="relative">
+                          <KeyRound className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                           <input
-                            id="forgot-otp-input"
+                            ref={resetOtpRef}
                             type="text"
                             inputMode="numeric"
+                            pattern="[0-9]*"
                             maxLength={6}
-                            autoFocus
-                            value={forgotOtp}
-                            onChange={(e) => setForgotOtp(e.target.value.replace(/\D/g, ""))}
+                            autoComplete="one-time-code"
+                            required
+                            value={resetOtpCode}
+                            onChange={(e) => setResetOtpCode(e.target.value.replace(/\D/g, ""))}
                             placeholder="123456"
-                            className="w-full rounded-xl border border-input bg-background/80 px-3.5 py-3 text-center font-mono text-xl font-bold tracking-widest text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                            className="w-full tracking-widest text-center text-lg font-mono font-bold rounded-xl border border-border bg-surface pl-10 pr-4 py-2.5 text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary transition-all"
                           />
                         </div>
+                      </div>
 
-                        <div>
-                          <label
-                            htmlFor="forgot-new-pw-input"
-                            className="mb-1 block text-xs font-medium text-foreground"
-                          >
-                            New Password (min 6 characters)
-                          </label>
-                          <div className="flex items-center gap-2.5 rounded-xl border border-input bg-background/80 px-3.5 py-3 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
-                            <Lock className="h-4 w-4 shrink-0 text-muted-foreground" />
-                            <input
-                              id="forgot-new-pw-input"
-                              type={showPassword ? "text" : "password"}
-                              value={forgotNewPassword}
-                              onChange={(e) => setForgotNewPassword(e.target.value)}
-                              placeholder="Enter new password"
-                              className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/70"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => setShowPassword((p) => !p)}
-                              className="shrink-0 text-muted-foreground hover:text-foreground cursor-pointer"
-                            >
-                              {showPassword ? (
-                                <EyeOff className="h-4 w-4" />
-                              ) : (
-                                <Eye className="h-4 w-4" />
-                              )}
-                            </button>
-                          </div>
-                        </div>
-
-                        <div>
-                          <label
-                            htmlFor="forgot-confirm-pw-input"
-                            className="mb-1 block text-xs font-medium text-foreground"
-                          >
-                            Confirm New Password
-                          </label>
-                          <div className="flex items-center gap-2.5 rounded-xl border border-input bg-background/80 px-3.5 py-3 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
-                            <Lock className="h-4 w-4 shrink-0 text-muted-foreground" />
-                            <input
-                              id="forgot-confirm-pw-input"
-                              type={showConfirmPassword ? "text" : "password"}
-                              value={forgotConfirmPassword}
-                              onChange={(e) => setForgotConfirmPassword(e.target.value)}
-                              placeholder="Repeat new password"
-                              className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/70"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => setShowConfirmPassword((p) => !p)}
-                              className="shrink-0 text-muted-foreground hover:text-foreground cursor-pointer"
-                            >
-                              {showConfirmPassword ? (
-                                <EyeOff className="h-4 w-4" />
-                              ) : (
-                                <Eye className="h-4 w-4" />
-                              )}
-                            </button>
-                          </div>
-                        </div>
-
-                        <button
-                          type="submit"
-                          disabled={isLoading}
-                          className="w-full rounded-xl bg-primary py-3.5 text-sm font-bold text-primary-foreground shadow-md hover:bg-primary-hover transition-all cursor-pointer disabled:opacity-60"
-                        >
-                          {isLoading ? "Updating password..." : "Update Password"}
-                        </button>
-                      </form>
-                    </div>
-                  ) : (
-                    <div>
-                      <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
-                        Reset password
-                      </h1>
-                      <p className="mt-1.5 text-sm text-muted-foreground">
-                        Enter your account email to receive a 6-digit recovery code.
-                      </p>
-
-                      <form onSubmit={handleForgotRequestOtp} className="mt-6 space-y-4">
-                        <div>
-                          <label
-                            htmlFor="recovery-email-input"
-                            className="mb-1.5 block text-xs font-medium text-foreground"
-                          >
-                            Account Email Address
-                          </label>
-                          <div className="flex items-center gap-2.5 rounded-xl border border-input bg-background/80 px-3.5 py-3 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
-                            <Mail className="h-4 w-4 shrink-0 text-muted-foreground" />
-                            <input
-                              id="recovery-email-input"
-                              type="email"
-                              autoFocus
-                              value={identifier}
-                              onChange={(e) => setIdentifier(e.target.value)}
-                              placeholder="you@example.com"
-                              className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/70"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="flex gap-3 pt-2">
+                      <div>
+                        <label className="block text-xs font-medium text-foreground mb-1">
+                          New Password
+                        </label>
+                        <div className="relative">
+                          <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                          <input
+                            type={showResetPassword ? "text" : "password"}
+                            autoComplete="new-password"
+                            required
+                            value={resetNewPassword}
+                            onChange={(e) => setResetNewPassword(e.target.value)}
+                            placeholder="••••••••"
+                            className="w-full rounded-xl border border-border bg-surface pl-10 pr-10 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary transition-all"
+                          />
                           <button
                             type="button"
-                            onClick={() => setStep("password")}
-                            className="flex-1 rounded-xl border border-border py-3 text-sm font-medium hover:bg-surface-2 transition-colors cursor-pointer"
+                            onClick={() => setShowResetPassword(!showResetPassword)}
+                            className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                            aria-label={showResetPassword ? "Hide password" : "Show password"}
                           >
-                            Cancel
-                          </button>
-                          <button
-                            type="submit"
-                            disabled={isLoading}
-                            className="flex-1 rounded-xl bg-primary py-3 text-sm font-bold text-primary-foreground hover:bg-primary-hover shadow-md transition-all cursor-pointer disabled:opacity-60"
-                          >
-                            {isLoading ? "Sending..." : "Send Reset Code"}
+                            {showResetPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                           </button>
                         </div>
-                      </form>
-                    </div>
-                  )}
+                        <p className="text-[11px] text-muted-foreground mt-1">
+                          Must be 8–128 characters with uppercase, lowercase, number, and special character.
+                        </p>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-foreground mb-1">
+                          Confirm New Password
+                        </label>
+                        <div className="relative">
+                          <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                          <input
+                            type={showResetConfirmPassword ? "text" : "password"}
+                            autoComplete="new-password"
+                            required
+                            value={resetConfirmPassword}
+                            onChange={(e) => setResetConfirmPassword(e.target.value)}
+                            placeholder="••••••••"
+                            className="w-full rounded-xl border border-border bg-surface pl-10 pr-10 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary transition-all"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowResetConfirmPassword(!showResetConfirmPassword)}
+                            className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                            aria-label={showResetConfirmPassword ? "Hide password" : "Show password"}
+                          >
+                            {showResetConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={loading || resetOtpCode.length < 6}
+                        className="w-full flex items-center justify-center gap-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-semibold py-2.5 px-4 text-sm transition-all shadow-sm cursor-pointer disabled:opacity-50 mt-2"
+                      >
+                        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Reset password"}
+                      </button>
+                    </form>
+                  </div>
+
+                  <div className="mt-6 flex items-center justify-between text-xs border-t border-border pt-3.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={handleForgotPasswordSubmit}
+                      disabled={resendCooldown > 0 || loading}
+                      className="font-medium text-xs sm:text-sm text-primary hover:underline disabled:text-muted-foreground disabled:no-underline disabled:cursor-not-allowed transition-colors"
+                    >
+                      {resendCooldown > 0 ? `Resend OTP in ${resendCooldown}s` : "Resend OTP"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => switchMode("login")}
+                      className="text-muted-foreground hover:text-foreground cursor-pointer text-xs sm:text-sm"
+                    >
+                      Back to sign in
+                    </button>
+                  </div>
                 </div>
               )}
+
             </div>
           </div>
-        </div>
-      </div>
 
-      {/* Right: Visual Brand Hero Column (Preserved & Enhanced) */}
-      <div className="relative hidden overflow-hidden border-l border-border lg:block bg-muted">
-        <img
-          src="/auth-farm.png"
-          alt="Precision agriculture fields with intelligence overlay"
-          loading="lazy"
-          className="absolute inset-0 h-full w-full object-cover opacity-90"
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/50 to-transparent" />
-
-        <div className="absolute top-12 right-12 hidden xl:block">
-          <div className="glass-strong float-slow w-fit rounded-2xl px-5 py-4 shadow-xl border border-border/80">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-full bg-primary/20 flex items-center justify-center">
-                <BarChart3 className="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">
-                  Projected Yield
-                </div>
-                <div className="mt-0.5 text-lg font-bold text-foreground">
-                  14,250 <span className="text-sm font-normal text-muted-foreground">kg/ha</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="absolute bottom-12 left-12 right-12 flex flex-col items-start gap-10">
-          <div className="glass-strong float-slow-delayed w-fit rounded-2xl px-5 py-4 shadow-xl border border-border/80">
-            <div className="flex items-center gap-2.5 mb-1.5">
-              <ShieldCheck className="h-4 w-4 text-primary" />
-              <div className="text-[10px] uppercase tracking-widest text-primary font-bold">
-                Smart Advisory Active
-              </div>
-            </div>
-            <div className="text-sm font-semibold text-foreground">Optimal irrigation window</div>
-            <div className="text-xs text-muted-foreground mt-0.5">6:00 AM - 9:00 AM Tomorrow</div>
+          {/* Right Column: Shared Marketing Card */}
+          <div className="flex justify-center lg:justify-start w-full h-full">
+            <AuthMarketingCard mode={mode} />
           </div>
 
-          <div>
-            <h2 className="max-w-xl font-display text-4xl font-bold leading-tight tracking-tight text-foreground">
-              Your farm's data, <br /> working{" "}
-              <span className="text-primary italic pr-2">for you.</span>
-            </h2>
-            <p className="mt-3 max-w-md text-base text-muted-foreground leading-relaxed">
-              Soil, weather, crop planning, and market intelligence — beautifully unified into one
-              proactive platform.
-            </p>
-          </div>
         </div>
-      </div>
+      </main>
+
+      {/* Footer */}
+      <footer className="w-full border-t border-border py-4 px-4 sm:px-6 text-center text-xs text-muted-foreground">
+        &copy; {new Date().getFullYear()} KrishiMitra — AI-Powered Smart Agriculture Platform.{" "}
+        <span className="whitespace-nowrap inline-block">All rights reserved.</span>
+      </footer>
     </div>
   );
 }

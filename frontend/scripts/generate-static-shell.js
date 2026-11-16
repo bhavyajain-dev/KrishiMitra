@@ -21,6 +21,7 @@ const ROUTE_SHELLS = [
   'alerts/index.html',
   'expenses/index.html',
   'profile/index.html',
+  'ai-mitra/index.html',
   'ai-saathi/index.html',
   'recommendations/index.html',
   '200.html',
