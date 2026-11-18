@@ -62,13 +62,23 @@ def _get_index():
     return _index or None
 
 
-def search(query, crop=None, stage_specific=False, limit=6, per_collection=3, min_score=0.05):
-    """Return up to `limit` relevant documents (strings) for the question."""
+def search(query, crop=None, stage_specific=False, limit=6, per_collection=3, min_score=0.05,
+           collections=None, with_meta=False):
+    """Return up to `limit` relevant documents for the question.
+
+    collections: only search these ChromaDB collections (e.g. disease notes).
+    with_meta:   return (text, collection, metadata) tuples instead of text.
+    """
     index = _get_index()
     if not index:
         return []
     docs, matrix = index["docs"], index["matrix"]
     scores = (matrix @ index["vectorizer"].transform([query]).T).toarray().ravel()
+    if collections:
+        allowed = set(collections)
+        scores = scores * [1.0 if d[0] in allowed else 0.0 for d in docs]
+        if "timeline_kb" not in allowed:
+            crop = None
 
     # Best matches from the other collections (disease treatments, app help).
     others, by_collection = [], {}
@@ -103,7 +113,7 @@ def search(query, crop=None, stage_specific=False, limit=6, per_collection=3, mi
         text = docs[i][1]
         if text not in seen:
             seen.add(text)
-            out.append(text)
+            out.append((text, docs[i][0], docs[i][2]) if with_meta else text)
         if len(out) >= limit:
             break
     return out

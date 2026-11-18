@@ -601,7 +601,7 @@ Instructions:
     <div>
       <PageHeader
         title="Weather & Advisory"
-        subtitle={active ? `${active.cityName} · ${sky.label}` : (locations.length ? "Loading conditions..." : "No location set yet")}
+        subtitle={active ? `${active.cityName} · ${sky.label}` : (activeError ? "Location not found" : locations.length ? "Loading conditions..." : "No location set yet")}
         action={
           <div className="flex items-center gap-2">
             {activeMeta && (
@@ -710,7 +710,7 @@ Instructions:
           {locations.map(loc => {
             const d = locationData[loc.id];
             const rainChance = d?.current?.rainChance ?? 0;
-            const condition = d ? getSkyStyle(rainChance, d.current.temp, d.current.wind, hour).label : "Loading...";
+            const condition = d ? getSkyStyle(rainChance, d.current.temp, d.current.wind, hour).label : (locationErrors[loc.id] ? "Not found" : "Loading...");
             return (
               <LocationCard
                 key={loc.id}

@@ -249,29 +249,18 @@ Keep it conversational, encouraging, and formatted in plain text (no markdown fo
 
     @staticmethod
     def _rag_reason(collection, crop_name, ph):
-        # Crop-specific reason from the crop profile. (The knowledge-base
-        # search below isn't filtered by crop, so it returned the same generic
-        # "land preparation" note for every crop.)
+        # Crop-specific reason from the crop profile. Names like
+        # "Rice (Paddy)" are looked up as "Rice". No knowledge-base embedding
+        # search here: on the small server that model can take minutes to load
+        # and hung the whole recommendation request.
         from krishi_core.services.crop_profile import crop_reason
-        specific = crop_reason(crop_name, ph)
-        if specific:
-            return specific
+        for name in (crop_name, crop_name.split(" (")[0].strip()):
+            specific = crop_reason(name, ph)
+            if specific:
+                return specific
         if ph is None:
-            reason = f"{crop_name} suits your local climate and season."
-        else:
-            reason = f"{crop_name} suits your soil's pH {ph} and current nutrient profile."
-        if collection:
-            try:
-                query = f"{crop_name} soil requirements pH nitrogen phosphorus recommendation"
-                rag = collection.query(query_texts=[query], n_results=1, where={"source": "timeline_kb"})
-                docs = rag.get("documents", [[]])[0]
-                if docs:
-                    why = extract_section(docs[0] + "\n", "Why it matters") or None
-                    if why:
-                        reason = why
-            except Exception:
-                pass
-        return reason
+            return f"{crop_name} suits your local climate and season."
+        return f"{crop_name} suits your soil's pH {ph} and current nutrient profile."
 
     def _heuristic_fallback(self, ph, org_carbon, season_in, area_acres, water_avail, collection, ph_known=True):
         results = []
@@ -841,12 +830,11 @@ class PredictDiseaseView(APIView):
 
             # Query ChromaDB disease treatments KB to enrich treatment if applicable
             try:
-                from krishi_core.ml_loader import state
-                d_col = state.get("disease_collection")
-                if d_col and disease_name and disease_name not in ("Unknown", "Healthy Foliage", "Not a Plant / Crop Leaf") and is_plant:
-                    kb_results = d_col.query(query_texts=[f"{crop_name} {disease_name}"], n_results=1)
-                    if kb_results and kb_results.get("documents") and kb_results["documents"][0]:
-                        kb_doc = kb_results["documents"][0][0]
+                from krishi_core.services.kb_search import search as kb_search
+                if disease_name and disease_name not in ("Unknown", "Healthy Foliage", "Not a Plant / Crop Leaf") and is_plant:
+                    hits = kb_search(f"{crop_name} {disease_name}", collections=("disease_treatments_kb",), limit=1, min_score=0.1)
+                    if hits:
+                        kb_doc = hits[0]
                         if kb_doc and len(kb_doc) > 20 and kb_doc not in treatment:
                             treatment += f"\n\n**Verified KB Advisory:** {kb_doc}"
             except Exception:
