@@ -5,9 +5,12 @@ import {
   ArrowUpRight,
   CloudSun,
   Droplets,
+  LineChart,
+  MapPinned,
   Sparkles,
   Sun,
   ThermometerSun,
+  Wallet,
   Wind,
 } from "lucide-react";
 import { useState, useEffect } from "react";
@@ -248,16 +251,19 @@ function Dashboard() {
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             {[
-              { to: "/expenses", label: "💰 Expense Tracker", sub: "Log farm expenses" },
-              { to: "/market", label: "📈 Market Prices", sub: "Check today's mandi rates" },
-              { to: "/farms", label: "🏡 Farm Details", sub: "Manage your farm plots" },
-              { to: "/weather", label: "🌤️ Weather", sub: "Check weekly forecast" },
-            ].map(({ to, label, sub }) => (
+              { to: "/expenses", label: "Expense Tracker", sub: "Log farm expenses", icon: Wallet },
+              { to: "/market", label: "Market Prices", sub: "Check today's mandi rates", icon: LineChart },
+              { to: "/farms", label: "Farm Details", sub: "Manage your farm plots", icon: MapPinned },
+              { to: "/weather", label: "Weather", sub: "Check weekly forecast", icon: CloudSun },
+            ].map(({ to, label, sub, icon: Icon }) => (
               <Link
                 key={to}
                 to={to}
                 className="ring-glow flex items-center gap-3 rounded-xl border border-border bg-secondary/30 px-4 py-3 transition-colors hover:border-primary/30 hover:bg-secondary/50"
               >
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-inset ring-primary/20">
+                  <Icon className="h-4 w-4" />
+                </div>
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-medium">{label}</div>
                   <div className="text-[11px] text-muted-foreground">{sub}</div>
