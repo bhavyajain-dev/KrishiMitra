@@ -1,4 +1,4 @@
-import { API_URL } from "@/lib/api";
+import { API_URL, fetchWeather } from "@/lib/api";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect, useRef } from "react";
 import { Search, MapPin, Wind, Droplets, Eye, Gauge, Thermometer, Sun, CloudRain, Cloud, CloudSun, Navigation, Plus, X, Sparkles, Clock, Calendar, AlertCircle, RefreshCw, Loader2 } from "lucide-react";
@@ -136,7 +136,7 @@ async function fetchWeatherForLocation(locationQuery, inputLat, inputLon) {
     }
   }
 
-  const weatherRes = await fetch(`${baseUrl}/weather?latitude=${lat}&longitude=${lon}`);
+  const weatherRes = await fetchWeather(lat, lon);
   
   if (!weatherRes.ok) {
     throw new Error(`Weather service unavailable (HTTP ${weatherRes.status})`);

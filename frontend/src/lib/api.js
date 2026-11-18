@@ -64,3 +64,38 @@ export function apiFetch(path, options = {}) {
     },
   });
 }
+
+/**
+ * Weather for a location, with a browser fallback.
+ *
+ * Normally the backend fetches the forecast from Open-Meteo. On shared hosting
+ * the server's IP can be rate-limited by Open-Meteo; the backend then replies
+ * 502 with `fallbackUrl`. In that case the browser fetches the forecast itself
+ * (the visitor's own IP) and sends it to the backend, which formats it and adds
+ * alerts exactly as usual. Returns a fetch Response either way.
+ */
+export async function fetchWeather(lat, lon, init = {}) {
+  const res = await fetch(`${API_URL}/weather?latitude=${lat}&longitude=${lon}`, init);
+  if (res.ok) return res;
+
+  let fallbackUrl;
+  try {
+    fallbackUrl = (await res.clone().json()).fallbackUrl;
+  } catch {
+    return res;
+  }
+  if (typeof fallbackUrl !== "string" || !fallbackUrl.startsWith("https://api.open-meteo.com/")) {
+    return res;
+  }
+  try {
+    const raw = await fetch(fallbackUrl);
+    if (!raw.ok) return res;
+    return await fetch(`${API_URL}/weather`, {
+      method: "POST",
+      headers: { ...(init.headers || {}), "Content-Type": "application/json" },
+      body: JSON.stringify({ raw: await raw.json() }),
+    });
+  } catch {
+    return res;
+  }
+}
