@@ -47,25 +47,30 @@ def sync_daily_market_data():
                 has_more = False
                 break
 
+            # One bulk upsert per batch instead of one query per record (the
+            # per-row version took many minutes against a remote database).
+            now = make_aware(datetime.now())
+            batch = {}
             for r in records:
-                parsed_date = make_aware(parse_api_date(r.get("arrival_date")))
-                
-                # Update or create
-                MarketPrice.objects.update_or_create(
-                    state=r.get("state"),
-                    district=r.get("district"),
-                    market=r.get("market"),
-                    commodity=r.get("commodity"),
-                    arrival_date=r.get("arrival_date"),
-                    defaults={
-                        'variety': r.get("variety"),
-                        'parsedDate': parsed_date,
-                        'min_price': float(r.get("min_price") or 0),
-                        'max_price': float(r.get("max_price") or 0),
-                        'modal_price': float(r.get("modal_price") or 0),
-                        'fetchedAt': make_aware(datetime.now())
-                    }
+                key = (r.get("state"), r.get("district"), r.get("market"),
+                       r.get("commodity"), r.get("arrival_date"))
+                batch[key] = MarketPrice(   # last duplicate in a batch wins
+                    state=key[0], district=key[1], market=key[2],
+                    commodity=key[3], arrival_date=key[4],
+                    variety=r.get("variety"),
+                    parsedDate=make_aware(parse_api_date(r.get("arrival_date"))),
+                    min_price=float(r.get("min_price") or 0),
+                    max_price=float(r.get("max_price") or 0),
+                    modal_price=float(r.get("modal_price") or 0),
+                    fetchedAt=now,
                 )
+            MarketPrice.objects.bulk_create(
+                list(batch.values()),
+                update_conflicts=True,
+                unique_fields=["state", "district", "market", "commodity", "arrival_date"],
+                update_fields=["variety", "parsedDate", "min_price", "max_price", "modal_price", "fetchedAt"],
+                batch_size=1000,
+            )
 
             total_processed += len(records)
             print(f"[MarketSyncService] Successfully synced batch. Total processed so far: {total_processed}")
