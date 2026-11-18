@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 _lock = threading.Lock()
 _index = None  # dict(docs=[(collection, text, meta)], vectorizer, matrix)
+stats = {"builds": 0, "build_seconds": None, "documents": 0, "error": None}
 
 
 def _build_index():
@@ -47,7 +48,17 @@ def _get_index():
     if _index is None:
         with _lock:
             if _index is None:
-                _index = _build_index() or {}
+                import time
+                t0 = time.monotonic()
+                stats["builds"] += 1
+                try:
+                    _index = _build_index() or {}
+                except Exception as exc:  # keep chat working without context
+                    logger.warning("kb_search: index build failed", exc_info=True)
+                    stats["error"] = type(exc).__name__
+                    _index = {}
+                stats["build_seconds"] = round(time.monotonic() - t0, 2)
+                stats["documents"] = len(_index.get("docs", [])) if _index else 0
     return _index or None
 
 

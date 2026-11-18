@@ -1683,6 +1683,11 @@ def chat_stream(request):
             logger.warning("Knowledge-base search failed", exc_info=True)
 
     timings = {'search': round(_time.monotonic() - _t0, 2)}
+    try:
+        from .services.kb_search import stats as _kb_stats
+        timings['kb'] = dict(_kb_stats)
+    except Exception:
+        pass
     logger.info("chat: knowledge search %.1fs (skipped=%s)", timings['search'], small_talk)
     _c0 = _time.monotonic()
     farmer_context = _farmer_context(request.user, request.data.get('farmId'),
