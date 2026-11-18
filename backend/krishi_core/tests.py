@@ -1201,3 +1201,47 @@ class MarketStateNameTests(TestCase):
         res = APIClient().get("/api/market/locations?state=Kerala&district=Ernakulam")
         self.assertEqual(res.data["districts"], ["Ernakulam"])
         self.assertEqual(res.data["markets"], ["Aluva"])
+
+
+class GoogleAccessTokenLoginTests(TestCase):
+    """Site-styled Google button: popup access token verified with Google."""
+
+    def _resp(self, status, data):
+        from unittest.mock import MagicMock
+        r = MagicMock()
+        r.status_code = status
+        r.json.return_value = data
+        return r
+
+    def _post(self, tokeninfo, userinfo=None):
+        from django.test import override_settings
+        with override_settings(GOOGLE_CLIENT_ID="our-client.apps.googleusercontent.com"), \
+             patch("krishi_core.views.requests.post", return_value=tokeninfo), \
+             patch("krishi_core.views.requests.get", return_value=userinfo or self._resp(200, {})):
+            return APIClient().post("/api/auth/google", {"accessToken": "ya29.test"}, format="json")
+
+    def test_token_for_our_app_logs_in_and_creates_account(self):
+        res = self._post(
+            self._resp(200, {"aud": "our-client.apps.googleusercontent.com", "sub": "g-1",
+                             "email": "farmer@example.test", "email_verified": "true"}),
+            self._resp(200, {"sub": "g-1", "given_name": "Asha", "family_name": "Patil"}),
+        )
+        self.assertEqual(res.status_code, 201 if res.status_code == 201 else 200)
+        self.assertIn("token", res.data)
+        u = User.objects.get(email="farmer@example.test")
+        self.assertEqual((u.googleId, u.first_name), ("g-1", "Asha"))
+        self.assertFalse(u.has_usable_password())
+
+    def test_token_issued_to_another_app_is_rejected(self):
+        res = self._post(self._resp(200, {"aud": "someone-else", "azp": "someone-else", "sub": "g-1",
+                                          "email": "farmer@example.test", "email_verified": "true"}))
+        self.assertEqual(res.status_code, 401)
+        self.assertFalse(User.objects.filter(email="farmer@example.test").exists())
+
+    def test_expired_token_is_rejected(self):
+        self.assertEqual(self._post(self._resp(400, {"error": "invalid_token"})).status_code, 401)
+
+    def test_unverified_google_email_is_rejected(self):
+        res = self._post(self._resp(200, {"aud": "our-client.apps.googleusercontent.com", "sub": "g-2",
+                                          "email": "x@example.test", "email_verified": "false"}))
+        self.assertEqual(res.status_code, 400)
