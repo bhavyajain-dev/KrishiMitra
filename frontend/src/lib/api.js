@@ -76,26 +76,36 @@ export function apiFetch(path, options = {}) {
  */
 export async function fetchWeather(lat, lon, init = {}) {
   const res = await fetch(`${API_URL}/weather?latitude=${lat}&longitude=${lon}`, init);
-  if (res.ok) return res;
-
-  let fallbackUrl;
+  let body = null;
   try {
-    fallbackUrl = (await res.clone().json()).fallbackUrl;
+    body = await res.clone().json();
   } catch {
     return res;
   }
+  const fallbackUrl = body?.fallbackUrl;
+  if (!fallbackUrl) return res; // normal forecast (or an error the caller handles)
   if (typeof fallbackUrl !== "string" || !fallbackUrl.startsWith("https://api.open-meteo.com/")) {
-    return res;
+    return weatherUnavailable();
   }
+  // The server couldn't reach the weather provider: fetch from the browser
+  // and let the server format it and add alerts.
   try {
     const raw = await fetch(fallbackUrl);
-    if (!raw.ok) return res;
+    if (!raw.ok) return weatherUnavailable();
     return await fetch(`${API_URL}/weather`, {
       method: "POST",
       headers: { ...(init.headers || {}), "Content-Type": "application/json" },
       body: JSON.stringify({ raw: await raw.json() }),
     });
   } catch {
-    return res;
+    return weatherUnavailable();
   }
+}
+
+/** A not-ok Response so callers' `if (!res.ok)` paths show "unavailable". */
+function weatherUnavailable() {
+  return new Response(JSON.stringify({ error: "Weather is unavailable right now." }), {
+    status: 503,
+    headers: { "Content-Type": "application/json" },
+  });
 }
