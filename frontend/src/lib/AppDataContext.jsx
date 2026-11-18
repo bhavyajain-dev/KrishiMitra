@@ -203,6 +203,11 @@ export function AppDataProvider({ children }) {
   }, [token]);
 
   const login = (newToken) => {
+    // Start every login clean: never show the previous user's location or
+    // selected farm (e.g. if their session expired without a logout).
+    setUserLocation(null);
+    setActiveFarmId(null);
+    localStorage.removeItem("active_farm_id");
     setToken(newToken);
   };
 

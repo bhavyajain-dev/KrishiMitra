@@ -94,7 +94,7 @@ function ScoreBar({ value, color = "bg-primary" }) {
 }
 
 export function RecommendationsView() {
-  const { activeFarmId, activeFarm, postScoped, fetchScoped, token } = useAppData();
+  const { activeFarmId, activeFarm, postScoped, fetchScoped, token, isLoading: isAppLoading } = useAppData();
   const [results, setResults] = useState(null);
   const [llmSummary, setLlmSummary] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -139,6 +139,8 @@ export function RecommendationsView() {
   }, [loadSavedRecommendations]);
 
   const handleGenerateRecommendations = async () => {
+    // Recommendations are for a specific farm (location, soil, water).
+    if (!activeFarm) return;
     setIsGenerating(true);
     setError(null);
 
@@ -294,7 +296,27 @@ export function RecommendationsView() {
       )}
 
       {/* Empty state: No recommendations yet */}
-      {!isLoading && !isGenerating && !results && !error && (
+      {/* No farm yet: nothing to recommend for. Ask the user to add one. */}
+      {!isAppLoading && !activeFarm && (
+        <div className="glass rounded-3xl p-8 sm:p-12 text-center border border-border">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 ring-1 ring-primary/25">
+            <Sprout className="h-7 w-7 text-primary" />
+          </div>
+          <h3 className="font-display text-lg font-semibold text-foreground">Add your farm first</h3>
+          <p className="mt-2 text-xs text-muted-foreground max-w-lg mx-auto leading-relaxed">
+            Crop recommendations are based on your farm's location, soil test and water availability.
+            Add your farm to get recommendations made for it.
+          </p>
+          <Link
+            to="/farms"
+            className="mt-6 inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+          >
+            <Sprout className="h-4 w-4" /> Add your farm
+          </Link>
+        </div>
+      )}
+
+      {activeFarm && !isLoading && !isGenerating && !results && !error && (
         <div className="glass rounded-3xl p-8 sm:p-12 text-center border border-border">
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 ring-1 ring-primary/30 shadow-sm">
             <Sprout className="h-7 w-7 text-primary" />
