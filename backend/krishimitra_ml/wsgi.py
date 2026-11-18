@@ -12,3 +12,14 @@ application = get_wsgi_application()
 from django.urls import get_resolver  # noqa: E402
 
 get_resolver().url_patterns
+
+# Build AI Mitra's knowledge-base index now (main thread, before serving), so
+# the first chat after a restart or wake-up doesn't wait ~15 s for it.
+try:
+    from krishi_core.services.kb_search import _get_index
+
+    _get_index()
+except Exception:  # never block startup; chat builds it on first use instead
+    import logging
+
+    logging.getLogger(__name__).warning("Knowledge index warm-up failed", exc_info=True)
