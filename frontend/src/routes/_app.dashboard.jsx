@@ -146,12 +146,23 @@ function Dashboard() {
   }
 
 
-  const rainChance = weatherSnapshot?.rainChance || 0;
-  const humidity = weatherSnapshot?.humidity || 0;
+  // Only give weather-based advice when there is real weather data. Before,
+  // a missing forecast counted as 0% rain and the card advised spraying.
+  const hasWeather = weatherSnapshot?.rainChance != null;
+  const rainChance = weatherSnapshot?.rainChance ?? 0;
+  const humidity = weatherSnapshot?.humidity ?? 0;
 
   // Fallback to static rules if the backend didn't generate any AI alerts
   const staticAdvisories = [
-    rainChance > 60
+    !hasWeather
+      ? {
+          title: "Weather-based advice",
+          body: activeFarm
+            ? "Loading live weather for your farm. Spraying and irrigation timing will appear here."
+            : "Add a farm with its location to get spraying and irrigation advice based on live weather.",
+          tone: "text-muted-foreground",
+        }
+      : rainChance > 60
       ? { title: "Rain alert: delay spraying", body: `Rain probability is ${rainChance}%. Avoid spraying operations until dry weather returns to ensure full crop absorption.`, tone: "text-warning" }
       : { title: "Good spraying window ahead", body: `Rain chance is only ${rainChance}%. This is a good window for micronutrient or pesticide spraying operations.`, tone: "text-primary" },
     humidity > 80
