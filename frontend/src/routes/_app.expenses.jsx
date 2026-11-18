@@ -1,3 +1,4 @@
+import { currentSeason } from "@/lib/season";
 import { API_URL } from "@/lib/api";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect, useCallback, useMemo } from "react";
@@ -124,7 +125,7 @@ function ExpensesPage() {
     <div>
       <PageHeader
         title="Expense Tracker"
-        subtitle={`Kharif 2026 · ${activeFarmId ? "Active Farm" : "All Farms"} · ₹${total.toLocaleString("en-IN")} spent so far`}
+        subtitle={`${currentSeason().label} · ${activeFarmId ? "Active Farm" : "All Farms"} · ₹${total.toLocaleString("en-IN")} spent so far`}
       />
 
       {/* Insight cards */}

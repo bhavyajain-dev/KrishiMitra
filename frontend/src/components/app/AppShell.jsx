@@ -1,3 +1,4 @@
+import { currentSeason } from "@/lib/season";
 import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 
@@ -240,7 +241,7 @@ export function AppShell({ children }) {
               <div className="min-w-0">
                 <div className="truncate font-display text-sm font-semibold">{current}</div>
                 <div className="hidden text-[11px] text-muted-foreground sm:block" suppressHydrationWarning>
-                  Kharif 2026 · {activeFarm?.location?.address || "No farm selected"}
+                  {currentSeason().label} · {activeFarm?.location?.address || "No farm selected"}
                 </div>
               </div>
             </div>
