@@ -991,6 +991,7 @@ class MarketSyncBulkUpsertTests(TestCase):
     def _response(self, records):
         from unittest.mock import MagicMock
         resp = MagicMock()
+        resp.status_code = 200
         resp.raise_for_status.return_value = None
         resp.json.return_value = {"records": records}
         return resp
