@@ -1,4 +1,4 @@
-import { API_URL } from "@/lib/api";
+import { API_URL, fetchWeather } from "@/lib/api";
 import { Link, createFileRoute } from "@tanstack/react-router";
 import {
   ArrowRight,
@@ -61,7 +61,7 @@ function Dashboard() {
       try {
         const { lat, lon, address } = activeFarm.location;
         if (lat == null || lon == null) return;
-        const res = await fetch(`${API_URL}/weather?latitude=${lat}&longitude=${lon}`, {
+        const res = await fetchWeather(lat, lon, {
           headers: { Authorization: `Bearer ${token}` }
         });
         if (!res.ok) return;

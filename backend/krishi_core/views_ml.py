@@ -230,6 +230,7 @@ Keep it conversational, encouraging, and formatted in plain text (no markdown fo
             "engine": "model" if used_model else "heuristic",  # additive, non-breaking
             "soilBasis": soil_basis,      # "soil_test" | "partial" | "assumed"
             "soilClasses": soil_classes,  # {"N": "Low"|"Medium"|"High"|None, ...}
+            "climateSource": getattr(self, "_climate_source", None) if used_model else None,
         })
 
     @staticmethod
@@ -340,6 +341,20 @@ Keep it conversational, encouraging, and formatted in plain text (no markdown fo
                 humidity = cur.get("humidity")
                 if temperature is None:            # fallback: current temp if climatology missing
                     temperature = cur.get("temperature")
+
+        # Live climate unavailable (e.g. the weather API rate-limits the host)?
+        # Use the state's 10-year seasonal normals so the trained model still
+        # runs on real climate data instead of dropping to the rule-based path.
+        climate_source = "live" if None not in (temperature, humidity, rainfall) else None
+        if None in (temperature, humidity, rainfall) and state_token:
+            from krishi_core.services.climate_normals import state_climate_normal
+            normal = state_climate_normal(state_token, season_token)
+            if normal:
+                temperature = temperature if temperature is not None else normal["temperature_C"]
+                humidity = humidity if humidity is not None else normal["humidity_pct"]
+                rainfall = rainfall if rainfall is not None else normal["rainfall_mm"]
+                climate_source = "state_normals"
+        self._climate_source = climate_source
 
         # Climate, season and state must be genuinely present. Soil may be
         # unknown: that is handled by averaging over soil_rows, never invented.
@@ -854,14 +869,34 @@ class WeatherView(APIView):
         from krishi_core.services.openmeteo_service import OpenMeteoService
         from krishi_core.services.alert_engine import alert_engine
 
-        forecast = OpenMeteoService().get_forecast(latitude=lat, longitude=lon)
+        svc = OpenMeteoService()
+        forecast = svc.get_forecast(latitude=lat, longitude=lon)
         if forecast is None:
-            return Response({"error": "Failed to fetch weather data from upstream service"}, status=502)
+            # The host's shared IP may be rate-limited by Open-Meteo. Tell the
+            # browser where to fetch the forecast itself; it then POSTs the raw
+            # response back here for parsing + alerts (see post()).
+            return Response({
+                "error": "Failed to fetch weather data from upstream service",
+                "fallbackUrl": svc.forecast_url(lat, lon),
+            }, status=502)
         
         # Generate dynamic weather alerts based on current conditions
         forecast["alerts"] = alert_engine.generate_alerts(forecast.get("current", {}))
 
         return Response(forecast)
+
+    def post(self, request):
+        """Format a forecast the browser fetched from Open-Meteo directly
+        (fallback when the server can't reach Open-Meteo) and add alerts."""
+        from krishi_core.services.openmeteo_service import OpenMeteoService
+        from krishi_core.services.alert_engine import alert_engine
+
+        forecast = OpenMeteoService().parse_raw(request.data.get("raw"))
+        if forecast is None:
+            return Response({"error": "Body must be {\"raw\": <Open-Meteo forecast JSON>}"}, status=400)
+        forecast["alerts"] = alert_engine.generate_alerts(forecast.get("current", {}))
+        return Response(forecast)
+
 
 class DecisionEngineView(APIView):
     """

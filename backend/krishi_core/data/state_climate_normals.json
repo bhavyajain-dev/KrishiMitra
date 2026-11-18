@@ -1,0 +1,292 @@
+{
+  "_about": "10-year seasonal climate normals per state (Open-Meteo Archive API, one agricultural centre per state). Used by the crop model only when the live climate lookup for a farm fails.",
+  "_period": "2016-01-01..2026-10-31",
+  "states": {
+    "AndhraPradesh": {
+      "centre": "Vijayawada",
+      "latitude": 16.51,
+      "longitude": 80.65,
+      "seasons": {
+        "Kharif": {
+          "rainfall_mm": 191.97,
+          "temperature_C": 28.35,
+          "humidity_pct": 75.0
+        },
+        "Rabi": {
+          "rainfall_mm": 21.56,
+          "temperature_C": 25.72,
+          "humidity_pct": 69.6
+        },
+        "Summer": {
+          "rainfall_mm": 42.05,
+          "temperature_C": 30.52,
+          "humidity_pct": 63.2
+        }
+      }
+    },
+    "Bihar": {
+      "centre": "Patna",
+      "latitude": 25.59,
+      "longitude": 85.14,
+      "seasons": {
+        "Kharif": {
+          "rainfall_mm": 225.17,
+          "temperature_C": 29.0,
+          "humidity_pct": 78.8
+        },
+        "Rabi": {
+          "rainfall_mm": 8.86,
+          "temperature_C": 19.77,
+          "humidity_pct": 68.5
+        },
+        "Summer": {
+          "rainfall_mm": 28.7,
+          "temperature_C": 28.66,
+          "humidity_pct": 52.5
+        }
+      }
+    },
+    "Gujarat": {
+      "centre": "Ahmedabad",
+      "latitude": 23.02,
+      "longitude": 72.57,
+      "seasons": {
+        "Kharif": {
+          "rainfall_mm": 201.9,
+          "temperature_C": 29.05,
+          "humidity_pct": 71.5
+        },
+        "Rabi": {
+          "rainfall_mm": 2.85,
+          "temperature_C": 23.79,
+          "humidity_pct": 45.6
+        },
+        "Summer": {
+          "rainfall_mm": 5.86,
+          "temperature_C": 31.52,
+          "humidity_pct": 35.3
+        }
+      }
+    },
+    "Haryana": {
+      "centre": "Karnal",
+      "latitude": 29.69,
+      "longitude": 76.99,
+      "seasons": {
+        "Kharif": {
+          "rainfall_mm": 121.25,
+          "temperature_C": 28.34,
+          "humidity_pct": 73.0
+        },
+        "Rabi": {
+          "rainfall_mm": 29.55,
+          "temperature_C": 16.3,
+          "humidity_pct": 72.0
+        },
+        "Summer": {
+          "rainfall_mm": 28.51,
+          "temperature_C": 26.47,
+          "humidity_pct": 47.6
+        }
+      }
+    },
+    "Karnataka": {
+      "centre": "Davanagere",
+      "latitude": 14.46,
+      "longitude": 75.92,
+      "seasons": {
+        "Kharif": {
+          "rainfall_mm": 173.42,
+          "temperature_C": 24.45,
+          "humidity_pct": 80.6
+        },
+        "Rabi": {
+          "rainfall_mm": 16.18,
+          "temperature_C": 25.39,
+          "humidity_pct": 51.9
+        },
+        "Summer": {
+          "rainfall_mm": 30.4,
+          "temperature_C": 28.53,
+          "humidity_pct": 56.0
+        }
+      }
+    },
+    "MP": {
+      "centre": "Bhopal",
+      "latitude": 23.26,
+      "longitude": 77.41,
+      "seasons": {
+        "Kharif": {
+          "rainfall_mm": 255.2,
+          "temperature_C": 26.63,
+          "humidity_pct": 75.0
+        },
+        "Rabi": {
+          "rainfall_mm": 7.98,
+          "temperature_C": 20.9,
+          "humidity_pct": 53.2
+        },
+        "Summer": {
+          "rainfall_mm": 6.51,
+          "temperature_C": 30.2,
+          "humidity_pct": 30.5
+        }
+      }
+    },
+    "Maharashtra": {
+      "centre": "Aurangabad",
+      "latitude": 19.88,
+      "longitude": 75.34,
+      "seasons": {
+        "Kharif": {
+          "rainfall_mm": 184.84,
+          "temperature_C": 25.32,
+          "humidity_pct": 76.4
+        },
+        "Rabi": {
+          "rainfall_mm": 5.38,
+          "temperature_C": 23.64,
+          "humidity_pct": 46.8
+        },
+        "Summer": {
+          "rainfall_mm": 9.55,
+          "temperature_C": 30.39,
+          "humidity_pct": 31.3
+        }
+      }
+    },
+    "Punjab": {
+      "centre": "Ludhiana",
+      "latitude": 30.9,
+      "longitude": 75.85,
+      "seasons": {
+        "Kharif": {
+          "rainfall_mm": 107.22,
+          "temperature_C": 28.6,
+          "humidity_pct": 71.3
+        },
+        "Rabi": {
+          "rainfall_mm": 33.31,
+          "temperature_C": 15.6,
+          "humidity_pct": 74.0
+        },
+        "Summer": {
+          "rainfall_mm": 35.4,
+          "temperature_C": 25.77,
+          "humidity_pct": 49.8
+        }
+      }
+    },
+    "Rajasthan": {
+      "centre": "Ajmer",
+      "latitude": 26.45,
+      "longitude": 74.64,
+      "seasons": {
+        "Kharif": {
+          "rainfall_mm": 104.25,
+          "temperature_C": 27.91,
+          "humidity_pct": 65.2
+        },
+        "Rabi": {
+          "rainfall_mm": 7.56,
+          "temperature_C": 19.42,
+          "humidity_pct": 46.3
+        },
+        "Summer": {
+          "rainfall_mm": 8.89,
+          "temperature_C": 29.01,
+          "humidity_pct": 28.8
+        }
+      }
+    },
+    "TamilNadu": {
+      "centre": "Tiruchirappalli",
+      "latitude": 10.79,
+      "longitude": 78.7,
+      "seasons": {
+        "Kharif": {
+          "rainfall_mm": 103.57,
+          "temperature_C": 30.01,
+          "humidity_pct": 62.5
+        },
+        "Rabi": {
+          "rainfall_mm": 82.21,
+          "temperature_C": 26.48,
+          "humidity_pct": 71.6
+        },
+        "Summer": {
+          "rainfall_mm": 52.78,
+          "temperature_C": 30.77,
+          "humidity_pct": 61.1
+        }
+      }
+    },
+    "Telangana": {
+      "centre": "Hyderabad",
+      "latitude": 17.39,
+      "longitude": 78.49,
+      "seasons": {
+        "Kharif": {
+          "rainfall_mm": 157.67,
+          "temperature_C": 25.84,
+          "humidity_pct": 75.7
+        },
+        "Rabi": {
+          "rainfall_mm": 8.17,
+          "temperature_C": 24.12,
+          "humidity_pct": 55.5
+        },
+        "Summer": {
+          "rainfall_mm": 19.1,
+          "temperature_C": 29.76,
+          "humidity_pct": 45.3
+        }
+      }
+    },
+    "UP": {
+      "centre": "Lucknow",
+      "latitude": 26.85,
+      "longitude": 80.95,
+      "seasons": {
+        "Kharif": {
+          "rainfall_mm": 198.63,
+          "temperature_C": 29.0,
+          "humidity_pct": 75.0
+        },
+        "Rabi": {
+          "rainfall_mm": 12.37,
+          "temperature_C": 18.85,
+          "humidity_pct": 66.0
+        },
+        "Summer": {
+          "rainfall_mm": 18.74,
+          "temperature_C": 28.81,
+          "humidity_pct": 43.8
+        }
+      }
+    },
+    "WestBengal": {
+      "centre": "Bardhaman",
+      "latitude": 23.23,
+      "longitude": 87.86,
+      "seasons": {
+        "Kharif": {
+          "rainfall_mm": 267.93,
+          "temperature_C": 28.15,
+          "humidity_pct": 84.8
+        },
+        "Rabi": {
+          "rainfall_mm": 21.95,
+          "temperature_C": 21.57,
+          "humidity_pct": 68.8
+        },
+        "Summer": {
+          "rainfall_mm": 95.56,
+          "temperature_C": 28.39,
+          "humidity_pct": 68.8
+        }
+      }
+    }
+  }
+}

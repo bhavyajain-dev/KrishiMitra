@@ -11,6 +11,36 @@ from typing import Optional
 # by misusing get_forecast().
 ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 
+
+def _ttl_cache(ttl_seconds, maxsize):
+    """Like functools.lru_cache, but entries expire and failures (None) are
+    never cached, so one failed upstream call doesn't stick until restart and
+    forecasts actually refresh."""
+    import threading
+    import time
+
+    def decorator(fn):
+        store, lock = {}, threading.Lock()
+
+        @functools.wraps(fn)
+        def wrapper(*args):
+            now = time.monotonic()
+            with lock:
+                hit = store.get(args)
+                if hit is not None and now - hit[0] < ttl_seconds:
+                    return hit[1]
+            value = fn(*args)
+            if value is not None:
+                with lock:
+                    if len(store) >= maxsize:
+                        store.pop(next(iter(store)))     # drop oldest entry
+                    store[args] = (now, value)
+            return value
+
+        wrapper.cache_clear = store.clear
+        return wrapper
+    return decorator
+
 # Canonical season token -> the calendar months that define that growing
 # season in India. Used to align the climatological aggregation with the
 # season the farmer selected (Kharif = monsoon, Rabi = winter, Summer = zaid).
@@ -70,7 +100,7 @@ def _aggregate_seasonal_climatology(dates, precs, temps, season_months):
     }
 
 
-@functools.lru_cache(maxsize=256)
+@_ttl_cache(ttl_seconds=7 * 24 * 3600, maxsize=256)
 def _fetch_seasonal_climatology(lat_r, lon_r, season, years, timeout):
     """Fetch + aggregate seasonal climatology from the Archive API.
 
@@ -123,7 +153,7 @@ def _fetch_seasonal_climatology(lat_r, lon_r, season, years, timeout):
     return agg
 
 
-@functools.lru_cache(maxsize=128)
+@_ttl_cache(ttl_seconds=30 * 60, maxsize=128)
 def _fetch_forecast_cached(lat_r: float, lon_r: float, forecast_days: int, timezone: str, timeout: int) -> Optional[dict]:
     params = {
         "latitude": lat_r,
@@ -220,6 +250,27 @@ class OpenMeteoService:
         if not data:
             return None
 
+        return self._parse_response(data)
+
+    def forecast_url(self, latitude: float, longitude: float,
+                     forecast_days: int = 16, timezone: str = "Asia/Kolkata") -> str:
+        """Exact forecast URL the server would request (used by the browser
+        fallback when the server's own request to Open-Meteo fails)."""
+        params = {
+            "latitude": round(float(latitude), 4),
+            "longitude": round(float(longitude), 4),
+            "current": ",".join(self.CURRENT_PARAMS),
+            "hourly": ",".join(self.HOURLY_PARAMS),
+            "daily": ",".join(self.DAILY_PARAMS),
+            "forecast_days": int(forecast_days),
+            "timezone": timezone,
+        }
+        return requests.Request("GET", self.BASE_URL, params=params).prepare().url
+
+    def parse_raw(self, data: dict) -> Optional[dict]:
+        """Parse a raw Open-Meteo forecast response (browser fallback)."""
+        if not isinstance(data, dict) or not isinstance(data.get("current"), dict):
+            return None
         return self._parse_response(data)
 
     def get_seasonal_climatology(
