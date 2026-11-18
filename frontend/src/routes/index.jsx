@@ -1,4 +1,5 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { BrandMark, ThemeToggle } from "@/components/app/AppShell";
 import {
   Sprout, ChevronRight, CloudRain, Camera, Leaf, TrendingUp, FlaskConical,
@@ -14,7 +15,34 @@ export const Route = createFileRoute("/")({
   component: Landing,
 });
 
+/**
+ * True when the visitor has a saved, unexpired login. Read after the page
+ * mounts (the pre-built HTML is the signed-out version), so the first render
+ * matches the static HTML and React doesn't log a hydration error.
+ */
+function useSignedIn() {
+  const [signedIn, setSignedIn] = useState(false);
+  useEffect(() => {
+    const check = () => {
+      try {
+        const token = localStorage.getItem("krishimitra_token");
+        if (!token) return setSignedIn(false);
+        const part = token.split(".")[1];
+        const payload = JSON.parse(atob(part.replace(/-/g, "+").replace(/_/g, "/")));
+        setSignedIn(!payload.exp || payload.exp * 1000 > Date.now());
+      } catch {
+        setSignedIn(false);
+      }
+    };
+    check();
+    window.addEventListener("storage", check);
+    return () => window.removeEventListener("storage", check);
+  }, []);
+  return signedIn;
+}
+
 function Landing() {
+  const signedIn = useSignedIn();
   return (
     <div className="min-h-screen bg-background text-foreground font-sans selection:bg-primary/30">
       
@@ -23,21 +51,33 @@ function Landing() {
         <BrandMark />
         <div className="flex items-center gap-1.5 xs:gap-2.5 sm:gap-4 shrink-0">
           <ThemeToggle />
-          <Link
-            to="/auth"
-            search={{ mode: "login" }}
-            className="text-xs sm:text-sm font-medium text-foreground hover:text-primary transition-colors whitespace-nowrap px-1.5 py-1"
-          >
-            Log in
-          </Link>
-          <Link
-            to="/auth"
-            search={{ mode: "signup" }}
-            className="rounded-full bg-primary/20 text-primary border border-primary/50 px-3 py-1.5 sm:px-5 sm:py-2 text-xs sm:text-sm font-bold transition-all hover:bg-primary hover:text-background hover:glow-emerald whitespace-nowrap inline-flex items-center shrink-0"
-          >
-            <span>Get Started</span>
-            <ChevronRight className="inline h-3.5 w-3.5 sm:h-4 sm:w-4 ml-0.5 sm:ml-1 shrink-0" />
-          </Link>
+          {signedIn ? (
+            <Link
+              to="/dashboard"
+              className="rounded-full bg-primary/20 text-primary border border-primary/50 px-3 py-1.5 sm:px-5 sm:py-2 text-xs sm:text-sm font-bold transition-all hover:bg-primary hover:text-background hover:glow-emerald whitespace-nowrap inline-flex items-center shrink-0"
+            >
+              <span>Dashboard</span>
+              <ChevronRight className="inline h-3.5 w-3.5 sm:h-4 sm:w-4 ml-0.5 sm:ml-1 shrink-0" />
+            </Link>
+          ) : (
+            <>
+              <Link
+                to="/auth"
+                search={{ mode: "login" }}
+                className="text-xs sm:text-sm font-medium text-foreground hover:text-primary transition-colors whitespace-nowrap px-1.5 py-1"
+              >
+                Log in
+              </Link>
+              <Link
+                to="/auth"
+                search={{ mode: "signup" }}
+                className="rounded-full bg-primary/20 text-primary border border-primary/50 px-3 py-1.5 sm:px-5 sm:py-2 text-xs sm:text-sm font-bold transition-all hover:bg-primary hover:text-background hover:glow-emerald whitespace-nowrap inline-flex items-center shrink-0"
+              >
+                <span>Get Started</span>
+                <ChevronRight className="inline h-3.5 w-3.5 sm:h-4 sm:w-4 ml-0.5 sm:ml-1 shrink-0" />
+              </Link>
+            </>
+          )}
         </div>
       </header>
 
@@ -71,9 +111,15 @@ function Landing() {
             Crop recommendations from your soil test, weather alerts, leaf disease detection and mandi prices, in one place for Indian farmers.
           </p>
 
-          <Link to="/auth" search={{ mode: "signup" }} className="rounded-full bg-primary text-background px-8 py-4 text-base font-bold transition-all hover:scale-105 glow-emerald flex items-center gap-2 mb-6">
-            Get Started Free <ChevronRight className="h-5 w-5" />
-          </Link>
+          {signedIn ? (
+            <Link to="/dashboard" className="rounded-full bg-primary text-background px-8 py-4 text-base font-bold transition-all hover:scale-105 glow-emerald flex items-center gap-2 mb-6">
+              Go to Dashboard <ChevronRight className="h-5 w-5" />
+            </Link>
+          ) : (
+            <Link to="/auth" search={{ mode: "signup" }} className="rounded-full bg-primary text-background px-8 py-4 text-base font-bold transition-all hover:scale-105 glow-emerald flex items-center gap-2 mb-6">
+              Get Started Free <ChevronRight className="h-5 w-5" />
+            </Link>
+          )}
 
           {/* Removed trial badges per user request */}
         </div>
@@ -232,8 +278,12 @@ function Landing() {
               </div>
               </div>
               <div className="mt-8 flex justify-center">
-                <Link to="/auth" search={{ mode: "signup" }} className="rounded-full bg-primary text-background px-7 py-3 text-sm font-bold transition-all hover:scale-105 glow-emerald flex items-center gap-2">
-                  Get Started Free <ChevronRight className="h-4 w-4" />
+                <Link
+                  to={signedIn ? "/dashboard" : "/auth"}
+                  search={signedIn ? undefined : { mode: "signup" }}
+                  className="rounded-full bg-primary text-background px-7 py-3 text-sm font-bold transition-all hover:scale-105 glow-emerald flex items-center gap-2"
+                >
+                  {signedIn ? "Go to Dashboard" : "Get Started Free"} <ChevronRight className="h-4 w-4" />
                 </Link>
               </div>
            </div>
