@@ -16,11 +16,11 @@ logger = logging.getLogger(__name__)
 
 GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 FALLBACK_MODELS = [
+    # Measured Nov 2026 with this project's key: 3.1-flash-lite answers in
+    # ~2 s; flash-lite-latest (3.5) takes 7-9 s; the 2.x names return 404.
+    "gemini-3.1-flash-lite",
     "gemini-flash-lite-latest",
     "gemini-flash-latest",
-    "gemini-2.5-flash-lite",
-    "gemini-2.5-flash",
-    "gemini-pro-latest",
 ]
 
 
@@ -29,7 +29,7 @@ def gemini_configured() -> bool:
 
 
 def _candidate_models():
-    configured = getattr(settings, "GEMINI_MODEL", "") or "gemini-flash-lite-latest"
+    configured = getattr(settings, "GEMINI_MODEL", "") or "gemini-3.1-flash-lite"
     models = [configured]
     for m in FALLBACK_MODELS:
         if m not in models:
