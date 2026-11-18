@@ -37,7 +37,7 @@ const COLORS = [
 ];
 
 function ExpensesPage() {
-  const { activeFarmId, token, fetchScoped, postScoped } = useAppData();
+  const { activeFarmId, activeFarm, token, fetchScoped, postScoped } = useAppData();
   const [expenses, setExpenses] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [expenseErrors, setExpenseErrors] = useState({});
@@ -160,7 +160,7 @@ function ExpensesPage() {
     <div>
       <PageHeader
         title="Expense Tracker"
-        subtitle={`${currentSeason().label} · ${activeFarmId ? "Active Farm" : "All Farms"} · ₹${formatRs(total)} spent so far`}
+        subtitle={`${currentSeason().label} · ${activeFarmId ? (activeFarm?.name || "This farm") : "All Farms"} · ₹${formatRs(total)} spent so far`}
       />
 
       {/* Insight cards */}

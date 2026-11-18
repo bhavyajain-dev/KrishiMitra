@@ -154,7 +154,7 @@ function SidebarContent({ onNavigate }) {
       {farms.length > 1 && (
         <div className="mx-4 mb-3">
           <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Active Farm
+            Viewing farm
           </label>
           <select
             value={activeFarmId || ""}

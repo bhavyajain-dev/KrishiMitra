@@ -363,14 +363,15 @@ function WeatherPage() {
       ? activeFarm.location
       : (activeFarm?.location?.address || activeFarm?.location?.query || null);
     const farmHasCoords = typeof activeFarm?.location === "object" && activeFarm?.location?.lat != null && activeFarm?.location?.lon != null;
+    const farmKey = activeFarm?._id || activeFarm?.id || "main";
 
     let chosen = null;
     if (farmHasCoords) {
-      chosen = { id: "farm-main", query: farmQuery, lat: activeFarm.location.lat, lon: activeFarm.location.lon };
+      chosen = { id: `farm-${farmKey}`, query: farmQuery, lat: activeFarm.location.lat, lon: activeFarm.location.lon };
     } else if (userHasCoords) {
       chosen = { id: "user-home", query: userQuery, lat: userLocation.lat, lon: userLocation.lon };
     } else if (farmQuery) {
-      chosen = { id: "farm-main", query: farmQuery, lat: null, lon: null };
+      chosen = { id: `farm-${farmKey}`, query: farmQuery, lat: null, lon: null };
     } else if (userQuery) {
       chosen = { id: "user-home", query: userQuery, lat: null, lon: null };
     }
@@ -388,7 +389,11 @@ function WeatherPage() {
         if (dup) { keptId = dup.id; return prev; }
         return [chosen, ...prev];
       });
-      setActiveId(prev => prev || keptId);
+      // A farm's location always becomes the one shown (so switching the
+      // active farm switches the weather); a saved home location only fills in
+      // when nothing is shown yet.
+      const isFarm = String(chosen.id).startsWith("farm-");
+      setActiveId(prev => (isFarm ? keptId : prev || keptId));
     }
   }, [userLocation, activeFarm]);
 
