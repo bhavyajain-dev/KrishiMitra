@@ -1,4 +1,5 @@
 import { API_URL } from "@/lib/api";
+import { validatePasswordPolicy, apiErrorMessage } from "@/lib/validation";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { Leaf, MapPin, Pencil, Save, Scale, Wind, Lock, LogOut, ShieldCheck, User, KeyRound, Eye, EyeOff } from "lucide-react";
@@ -90,6 +91,10 @@ function ProfileSettingsPage() {
 
   const handleSaveProfile = async (e) => {
     e.preventDefault();
+    if (!editForm.firstName?.trim()) {
+      toast.error("First name cannot be empty.");
+      return;
+    }
     setIsSavingProfile(true);
     try {
       const res = await fetch(`${API_URL}/auth/profile`, {
@@ -109,7 +114,8 @@ function ProfileSettingsPage() {
         fetchDashboardData();
         toast.success("Profile updated successfully");
       } else {
-        toast.error("Could not save profile changes.");
+        const errData = await res.json().catch(() => ({}));
+        toast.error(apiErrorMessage(errData, "Could not save profile changes."));
       }
     } catch (err) {
       console.error(err);
@@ -125,8 +131,9 @@ function ProfileSettingsPage() {
       toast.error("New passwords do not match.");
       return;
     }
-    if (passwordForm.newPassword.length < 6) {
-      toast.error("New password must be at least 6 characters.");
+    const policyError = validatePasswordPolicy(passwordForm.newPassword);
+    if (policyError) {
+      toast.error(policyError);
       return;
     }
     setIsChangingPassword(true);
@@ -198,8 +205,9 @@ function ProfileSettingsPage() {
       toast.error("Please enter the complete 6-digit verification code.");
       return;
     }
-    if (!otpNewPassword || otpNewPassword.length < 6) {
-      toast.error("New password must be at least 6 characters.");
+    const otpPolicyError = validatePasswordPolicy(otpNewPassword);
+    if (otpPolicyError) {
+      toast.error(otpPolicyError);
       return;
     }
     if (otpNewPassword !== otpConfirmPassword) {
@@ -426,7 +434,7 @@ function ProfileSettingsPage() {
                   <input
                     type={showNewPassword ? "text" : "password"}
                     required
-                    minLength={6}
+                    minLength={8}
                     value={passwordForm.newPassword}
                     onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
                     placeholder="••••••••"
@@ -449,7 +457,7 @@ function ProfileSettingsPage() {
                   <input
                     type={showConfirmPassword ? "text" : "password"}
                     required
-                    minLength={6}
+                    minLength={8}
                     value={passwordForm.confirmPassword}
                     onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
                     placeholder="••••••••"
@@ -526,7 +534,7 @@ function ProfileSettingsPage() {
                       <input
                         type={showOtpNewPassword ? "text" : "password"}
                         required
-                        minLength={6}
+                        minLength={8}
                         value={otpNewPassword}
                         onChange={(e) => setOtpNewPassword(e.target.value)}
                         placeholder="••••••••"
@@ -549,7 +557,7 @@ function ProfileSettingsPage() {
                       <input
                         type={showOtpConfirmPassword ? "text" : "password"}
                         required
-                        minLength={6}
+                        minLength={8}
                         value={otpConfirmPassword}
                         onChange={(e) => setOtpConfirmPassword(e.target.value)}
                         placeholder="••••••••"

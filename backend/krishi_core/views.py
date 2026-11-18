@@ -38,6 +38,17 @@ logger = logging.getLogger(__name__)
 
 # ─── Helpers ────────────────────────────────────────────────────────────
 
+def _text(value):
+    """A request value as stripped text. Numbers become text; lists, objects
+    and other non-text values become '' (so they fail validation cleanly
+    instead of crashing with a 500)."""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return str(value).strip()
+    return ''
+
+
 
 def get_tokens_for_user(user):
     refresh = RefreshToken.for_user(user)
@@ -73,12 +84,12 @@ def auth_register(request):
     from .validators import validate_email_syntax
 
     data = request.data
-    raw_email = (data.get('email') or '').strip().lower()
-    phone = (data.get('phone') or '').strip()
+    raw_email = _text(data.get('email')).lower()
+    phone = _text(data.get('phone'))
     password = data.get('password', '')
-    first_name = (data.get('firstName') or '').strip()
-    last_name = (data.get('lastName') or '').strip()
-    name = (data.get('name') or '').strip()
+    first_name = _text(data.get('firstName'))
+    last_name = _text(data.get('lastName'))
+    name = _text(data.get('name'))
     if name and not first_name:
         parts = name.split(' ', 1)
         first_name = parts[0]
@@ -86,7 +97,7 @@ def auth_register(request):
             last_name = parts[1]
 
     verification_token = data.get('verificationToken')
-    otp_code = (data.get('otp') or '').strip()
+    otp_code = _text(data.get('otp'))
 
     if not raw_email:
         return Response({'message': 'Email is required.'}, status=400)
@@ -149,11 +160,24 @@ def auth_register(request):
         except ValidationError as e:
             return Response({'message': 'Password does not meet requirements: ' + '; '.join(e.messages), 'errors': list(e.messages)}, status=400)
 
-    if User.objects.filter(email=email).exists():
+    if User.objects.filter(email__iexact=email).exists():
         return Response({'message': 'An account with this email already exists.'}, status=400)
 
+    if len(first_name) > 150 or len(last_name) > 150:
+        return Response({'message': 'Name is too long (max 150 characters).'}, status=400)
+    if phone:
+        cleaned_phone = _clean_phone(phone)
+        if not cleaned_phone:
+            return Response({'message': 'Enter a valid 10-digit Indian mobile number.'}, status=400)
+        phone = cleaned_phone
     if phone and User.objects.filter(phone=phone).exists():
         return Response({'message': 'Phone number already registered.'}, status=400)
+    role = data.get('role') or 'farmer'
+    if role not in ('farmer', 'advisor'):
+        return Response({'message': 'Role must be farmer or advisor.'}, status=400)
+    farming_mode = data.get('farmingMode') or 'moderate'
+    if farming_mode not in _FARMING_MODES:
+        return Response({'message': 'Farming mode must be organic, moderate or flexible.'}, status=400)
 
     if not phone:
         phone = f"u_{uuid.uuid4().hex[:16]}"
@@ -167,9 +191,9 @@ def auth_register(request):
         first_name=first_name,
         last_name=last_name,
         phone=phone,
-        role=data.get('role', 'farmer'),
+        role=role,
         location=loc_dict,
-        farmingMode=data.get('farmingMode', 'moderate'),
+        farmingMode=farming_mode,
         isVerified=True,
     )
 
@@ -188,7 +212,7 @@ def auth_register(request):
 @permission_classes([permissions.AllowAny])
 def auth_login(request):
     """Login with email or username + password. Returns { token, user }."""
-    identifier = (request.data.get('email') or request.data.get('username') or '').strip().lower()
+    identifier = _text(request.data.get('email') or request.data.get('username')).lower()
     password = request.data.get('password', '')
 
     if not identifier or not password:
@@ -405,39 +429,99 @@ def auth_me(request):
     return Response({'user': serializer.data})
 
 
+_LANGUAGES = {code for code, _ in User._meta.get_field('language').choices}
+_FARMING_MODES = {code for code, _ in User._meta.get_field('farmingMode').choices}
+
+
+def _clean_phone(raw):
+    """Indian mobile number as 10 digits, or None when invalid."""
+    import re
+    digits = re.sub(r'[\s\-()]', '', str(raw or ''))
+    if digits.startswith('+91'):
+        digits = digits[3:]
+    elif digits.startswith('91') and len(digits) == 12:
+        digits = digits[2:]
+    elif digits.startswith('0') and len(digits) == 11:
+        digits = digits[1:]
+    return digits if re.fullmatch(r'[6-9]\d{9}', digits) else None
+
+
 @api_view(['PATCH', 'PUT'])
 @permission_classes([permissions.IsAuthenticated])
 def auth_update_profile(request):
-    """Update the logged-in user's profile."""
+    """Update the logged-in user's profile. Unknown values get a clear 400."""
     user = request.user
     data = request.data
+    if not isinstance(data, dict):
+        return Response({'message': 'Send the profile as a JSON object.'}, status=400)
+
+    def bad(msg):
+        return Response({'message': msg}, status=400)
+
+    if 'email' in data and _text(data.get('email')).lower() != (user.email or '').lower():
+        return bad('Email cannot be changed here. It is your login ID.')
 
     if 'firstName' in data:
-        user.first_name = data['firstName']
+        first = _text(data.get('firstName'))
+        if not first:
+            return bad('First name cannot be empty.')
+        if len(first) > 150:
+            return bad('First name is too long (max 150 characters).')
+        user.first_name = first
     if 'lastName' in data:
-        user.last_name = data['lastName']
+        last = _text(data.get('lastName'))
+        if len(last) > 150:
+            return bad('Last name is too long (max 150 characters).')
+        user.last_name = last
     if 'phone' in data:
-        user.phone = data['phone']
+        phone = _clean_phone(data.get('phone'))
+        if not phone:
+            return bad('Enter a valid 10-digit Indian mobile number.')
+        if User.objects.filter(phone=phone).exclude(pk=user.pk).exists():
+            return bad('This phone number is already used by another account.')
+        user.phone = phone
     if 'language' in data:
+        if data['language'] not in _LANGUAGES:
+            return bad('Unsupported language.')
         user.language = data['language']
     if 'farmingMode' in data:
+        if data['farmingMode'] not in _FARMING_MODES:
+            return bad('Farming mode must be organic, moderate or flexible.')
         user.farmingMode = data['farmingMode']
     if 'avatarUrl' in data:
-        user.avatarUrl = data['avatarUrl']
+        from django.core.validators import URLValidator
+        from django.core.exceptions import ValidationError as DjangoValidationError
+        url = _text(data.get('avatarUrl'))
+        if url:
+            try:
+                URLValidator(schemes=['https', 'http'])(url)
+            except DjangoValidationError:
+                return bad('Avatar must be a valid image URL.')
+            if len(url) > 200:
+                return bad('Avatar URL is too long.')
+        user.avatarUrl = url
     if 'location' in data:
         loc = data['location']
         if isinstance(loc, dict):
-            user.location = loc
+            new_loc = loc
         elif isinstance(loc, str) and loc.strip():
-            user.location = {'address': loc.strip()}
+            new_loc = {'address': loc.strip()}
         elif loc is None or loc == '':
-            user.location = {}
+            new_loc = {}
         else:
-            user.location = {'address': str(loc)}
+            return bad('Location must be an address or an object.')
+        if len(json.dumps(new_loc, default=str)) > 5000:
+            return bad('Location is too large.')
+        user.location = new_loc
     if 'settings' in data:
+        if not isinstance(data['settings'], dict) or len(json.dumps(data['settings'], default=str)) > 20000:
+            return bad('Settings must be an object.')
         user.settings = data['settings']
 
-    user.save()
+    try:
+        user.save()
+    except IntegrityError:
+        return bad('This phone number is already used by another account.')
     serializer = UserSerializer(user)
     return Response({'user': serializer.data})
 
@@ -450,11 +534,19 @@ def auth_change_password(request):
     old_password = request.data.get('oldPassword')
     new_password = request.data.get('newPassword')
 
-    if not user.check_password(old_password):
+    if not isinstance(old_password, str) or not user.check_password(old_password):
         return Response({'message': 'Incorrect current password.'}, status=400)
 
-    if not new_password or len(new_password) < 6:
-        return Response({'message': 'New password must be at least 6 characters long.'}, status=400)
+    if not isinstance(new_password, str) or not new_password:
+        return Response({'message': 'New password is required.'}, status=400)
+    if new_password == old_password:
+        return Response({'message': 'New password must be different from the current one.'}, status=400)
+    from django.contrib.auth.password_validation import validate_password
+    from django.core.exceptions import ValidationError as DjangoValidationError
+    try:
+        validate_password(new_password, user=user)
+    except DjangoValidationError as e:
+        return Response({'message': ' '.join(e.messages), 'errors': list(e.messages)}, status=400)
 
     user.set_password(new_password)
     user.save()
@@ -483,7 +575,7 @@ def auth_request_otp(request):
     from .models import AuthOTP
     from .validators import validate_email_syntax
 
-    raw_email = (request.data.get('email') or '').strip().lower()
+    raw_email = _text(request.data.get('email')).lower()
     purpose = request.data.get('purpose') or 'login'
     if purpose not in ['login', 'register']:
         return Response({'message': 'A valid purpose (login or register) is required.'}, status=400)
@@ -578,8 +670,8 @@ def auth_verify_otp(request):
     from .models import AuthOTP
     from .validators import validate_email_syntax
     
-    raw_email = (request.data.get('email') or '').strip().lower()
-    otp_code = (request.data.get('otp') or '').strip()
+    raw_email = _text(request.data.get('email')).lower()
+    otp_code = _text(request.data.get('otp'))
     purpose = request.data.get('purpose')
     if purpose and purpose not in ['login', 'register']:
         return Response({'message': 'A valid purpose (login or register) is required.'}, status=400)
@@ -664,8 +756,8 @@ def auth_check_exists(request):
     from django.core.exceptions import ValidationError
     from .validators import validate_email_syntax
 
-    identifier = (request.data.get('email') or request.data.get('username') or '').strip().lower()
-    phone = (request.data.get('phone') or '').strip()
+    identifier = _text(request.data.get('email') or request.data.get('username')).lower()
+    phone = _text(request.data.get('phone'))
     
     if not identifier and not phone:
         return Response({'message': 'Email, username, or phone is required.'}, status=400)
@@ -677,6 +769,7 @@ def auth_check_exists(request):
             return Response({'message': e.message if hasattr(e, 'message') else str(e)}, status=400)
 
     user_by_identifier = (User.objects.filter(email=identifier).first() or User.objects.filter(username=identifier).first()) if identifier else None
+    phone = _clean_phone(phone) or phone
     user_by_phone = User.objects.filter(phone=phone).first() if phone else None
     user = user_by_identifier or user_by_phone
     exists = bool(user)
@@ -703,7 +796,7 @@ def auth_forgot_password(request):
     from django.core.exceptions import ValidationError
     from .validators import validate_email_syntax
     
-    raw_email = (request.data.get('email') or '').strip().lower()
+    raw_email = _text(request.data.get('email')).lower()
     if not raw_email:
         return Response({'message': 'Email is required.'}, status=400)
 
@@ -800,8 +893,8 @@ def auth_reset_password(request):
     from django.core.cache import cache
     from .validators import validate_email_syntax
 
-    raw_email = (request.data.get('email') or '').strip().lower()
-    otp_code = (request.data.get('otp') or '').strip()
+    raw_email = _text(request.data.get('email')).lower()
+    otp_code = _text(request.data.get('otp'))
     new_password = request.data.get('newPassword', '')
     
     if not raw_email or not otp_code or not new_password:
@@ -887,7 +980,7 @@ def auth_reset_password(request):
 # ─── CRUD ViewSets ──────────────────────────────────────────────────────
 
 
-class UserViewSet(viewsets.ModelViewSet):
+class UserViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = User.objects.all()
     serializer_class = UserSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -1091,6 +1184,15 @@ class CropPlanViewSet(OwnerViewSet):
         # Fallback to generic beneficial cover crops for unmapped crops
         return Response(['Clover', 'Alfalfa', 'Cowpea'])
 
+def _safe_limit(raw, default, maximum):
+    """Parse a ?limit= value; junk falls back to the default instead of a 500."""
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return default
+    return max(1, min(maximum, value))
+
+
 class MarketPriceViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = MarketPrice.objects.all()
     serializer_class = MarketPriceSerializer
@@ -1102,7 +1204,7 @@ class MarketPriceViewSet(viewsets.ReadOnlyModelViewSet):
         district = self.request.query_params.get('district')
         market_q = self.request.query_params.get('market')
         commodity = self.request.query_params.get('commodity')
-        limit = int(self.request.query_params.get('limit', 200))
+        limit = _safe_limit(self.request.query_params.get('limit'), default=200, maximum=1000)
         if state:
             qs = qs.filter(state__iexact=state)
         if district:
@@ -1400,7 +1502,11 @@ def chat_stream(request):
     if raw_msg is None or not isinstance(raw_msg, str) or not raw_msg.strip():
         return Response({'error': 'A non-empty "message" string is required.'}, status=400)
     user_msg = raw_msg.strip()
-    session_id = request.data.get('sessionId', 'default')
+    if len(user_msg) > 8000:
+        return Response({'error': 'Message is too long. Please keep it under 8000 characters.'}, status=400)
+    session_id = request.data.get('sessionId') or 'default'
+    if not isinstance(session_id, str) or len(session_id) > 100:
+        return Response({'error': 'Invalid sessionId.'}, status=400)
     force_json = request.data.get('forceJson', False)
     field_id = request.data.get('field_id', None)
 
@@ -1619,7 +1725,7 @@ def chat_stream(request):
             try:
                 from .services.ai_engine.llm_service import llm_service
                 
-                farm = Farm.objects.filter(id=farm_id).first() if farm_id else None
+                farm = Farm.objects.filter(id=farm_id, owner=request.user).first() if str(farm_id or '').isdigit() else None
                 if farm and (farm.ph or farm.nitrogen or farm.ec):
                     ideal_soil_text = crop_prof.iloc[0]['soil_type'] if not crop_prof.empty else "well drained, neutral pH"
                     
@@ -1784,12 +1890,14 @@ Output ONLY a raw JSON object with this exact schema:
 @permission_classes([permissions.IsAuthenticated])
 def chat_sync_plan(request):
     """Saves a generated crop plan or schedule from the AI."""
-    sync_data = request.data.get('syncData', {})
+    sync_data = request.data.get('syncData') or {}
     farm_id = request.data.get('farmId')
+    if not isinstance(sync_data, dict):
+        return Response({'message': 'syncData must be an object.'}, status=400)
 
     try:
-        farm = Farm.objects.get(id=farm_id, owner=request.user)
-    except Farm.DoesNotExist:
+        farm = Farm.objects.get(id=int(farm_id), owner=request.user)
+    except (Farm.DoesNotExist, TypeError, ValueError):
         return Response({'message': 'Farm not found.'}, status=404)
 
     tasks_generated = 0
@@ -1798,27 +1906,33 @@ def chat_sync_plan(request):
     import uuid
     plan_data = sync_data.get('cropPlan')
     if plan_data:
+        if not isinstance(plan_data, dict):
+            return Response({'message': 'cropPlan must be an object.'}, status=400)
         # Match MongoDB structure for milestones
-        milestones = plan_data.get('milestones', [])
+        milestones = plan_data.get('milestones') or []
+        if not isinstance(milestones, list) or not all(isinstance(m, dict) for m in milestones):
+            return Response({'message': 'milestones must be a list of objects.'}, status=400)
         for m in milestones:
             m['_id'] = m.get('_id', str(uuid.uuid4()))
             m['status'] = m.get('status', 'pending')
             m['notes'] = m.get('notes', '')
 
-        plan_obj = CropPlan.objects.create(
-            owner=request.user,
-            farm=farm,
-            cropName=plan_data.get('cropName', 'Unknown Crop'),
-            season=plan_data.get('season', 'Unknown'),
-            sowingDate=plan_data.get('sowingDate', '2025-01-01'),
-            expectedHarvestDate=plan_data.get('expectedHarvestDate', '2025-06-01'),
-            milestones=plan_data.get('milestones', []),
-            irrigationCycles=plan_data.get('irrigationCycles', []),
-            fertilizerEvents=plan_data.get('fertilizerEvents', []),
-            estimatedCost=plan_data.get('estimatedCost', 0) or 0,
-            targetYieldKg=plan_data.get('targetYieldKg', 0) or 0,
-            status='active'
-        )
+        serializer = CropPlanSerializer(data={
+            'farm': farm.id,
+            'cropName': plan_data.get('cropName') or 'Unknown Crop',
+            'season': plan_data.get('season') or 'Unknown',
+            'sowingDate': plan_data.get('sowingDate') or '2025-01-01',
+            'expectedHarvestDate': plan_data.get('expectedHarvestDate') or '2025-06-01',
+            'milestones': milestones,
+            'irrigationCycles': plan_data.get('irrigationCycles') or [],
+            'fertilizerEvents': plan_data.get('fertilizerEvents') or [],
+            'estimatedCost': plan_data.get('estimatedCost') or 0,
+            'targetYieldKg': plan_data.get('targetYieldKg') or 0,
+            'status': 'active',
+        }, context={'request': request})
+        if not serializer.is_valid():
+            return Response({'message': 'Invalid crop plan.', 'errors': serializer.errors}, status=400)
+        plan_obj = serializer.save(owner=request.user)
 
     return Response({'success': True})
 
@@ -1935,20 +2049,38 @@ def weather_cache_get(request, key):
 
 
 @api_view(['POST'])
-@permission_classes([permissions.AllowAny])
+@permission_classes([permissions.IsAuthenticated])
 def weather_cache_set(request):
     from django.utils import timezone
+    import math
     key = request.data.get('locationKey')
-    if not key:
-        return Response({'error': 'locationKey required'}, status=400)
+    if not key or not isinstance(key, str) or len(key) > 255:
+        return Response({'error': 'locationKey required (max 255 characters)'}, status=400)
+    payload = request.data.get('data', {})
+    if not isinstance(payload, dict) or len(json.dumps(payload, default=str)) > 300000:
+        return Response({'error': 'data must be a weather object'}, status=400)
+    coords = {}
+    for name, bound in (('lat', 90), ('lon', 180)):
+        raw = request.data.get(name)
+        if raw in (None, ''):
+            coords[name] = None
+            continue
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return Response({'error': f'{name} must be a number'}, status=400)
+        if not math.isfinite(value) or abs(value) > bound:
+            return Response({'error': f'{name} is out of range'}, status=400)
+        coords[name] = value
+    city = str(request.data.get('cityName') or '')[:255]
 
     cache, created = WeatherCache.objects.update_or_create(
         locationKey=key,
         defaults={
-            'cityName': request.data.get('cityName', ''),
-            'lat': request.data.get('lat'),
-            'lon': request.data.get('lon'),
-            'data': request.data.get('data', {})
+            'cityName': city,
+            'lat': coords['lat'],
+            'lon': coords['lon'],
+            'data': payload
         }
     )
     cache.fetchedAt = timezone.now()
@@ -1970,6 +2102,8 @@ def geocode(request):
     q = request.query_params.get('q', '').strip() or request.query_params.get('query', '').strip()
     if not q:
         return Response({'error': 'Query parameter q is required', 'results': []}, status=400)
+    if len(q) > 200:
+        return Response({'error': 'Query is too long (max 200 characters)', 'results': []}, status=400)
     
     try:
         limit = int(request.query_params.get('limit', 5))
@@ -2000,6 +2134,9 @@ def geocode_reverse(request):
         lon = float(lon_str)
     except ValueError:
         return Response({'error': 'Invalid lat or lon parameter'}, status=400)
+    import math
+    if not (math.isfinite(lat) and math.isfinite(lon)) or abs(lat) > 90 or abs(lon) > 180:
+        return Response({'error': 'lat must be within ±90 and lon within ±180'}, status=400)
         
     cache_key = f"rev:{lat:.4f}:{lon:.4f}"
     if cache_key in _GEOCODE_CACHE:
@@ -2041,8 +2178,9 @@ def geocode_reverse(request):
         }
         _GEOCODE_CACHE[cache_key] = out
         return Response(out)
-    except Exception as e:
-        return Response({'error': f'Reverse geocoding request failed: {str(e)}'}, status=500)
+    except Exception:
+        logger.warning("Reverse geocoding failed", exc_info=True)
+        return Response({'error': 'Reverse geocoding is unavailable right now. Please type your location.'}, status=502)
 
 
 

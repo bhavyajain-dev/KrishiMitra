@@ -7,6 +7,13 @@ import { useAppData } from "@/lib/AppDataContext";
 import { PageHeader } from "@/components/app/AppShell";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { toast } from "sonner";
+import { apiErrorMessage } from "@/lib/validation";
+
+function formatRs(value) {
+  const n = Number(value) || 0;
+  const paise = !Number.isInteger(Math.round(n * 100) / 100);
+  return n.toLocaleString("en-IN", { minimumFractionDigits: paise ? 2 : 0, maximumFractionDigits: 2 });
+}
 
 export const Route = createFileRoute("/_app/expenses")({
   head: () => ({
@@ -66,7 +73,12 @@ function ExpensesPage() {
     const newErrors = {};
     if (!formData.label.trim()) newErrors.label = "Description is required";
     if (!formData.amountRs) newErrors.amountRs = "Amount is required";
-    else if (Number(formData.amountRs) <= 0) newErrors.amountRs = "Amount must be greater than 0";
+    else if (!Number.isFinite(Number(formData.amountRs)) || Number(formData.amountRs) <= 0) newErrors.amountRs = "Amount must be greater than 0";
+    else if (Number(formData.amountRs) > 100000000) newErrors.amountRs = "Amount cannot exceed ₹10,00,00,000";
+    if (!activeFarmId) {
+      toast.error("Add a farm first, then record expenses for it.");
+      return;
+    }
     if (Object.keys(newErrors).length > 0) { setExpenseErrors(newErrors); return; }
     setExpenseErrors({});
     setIsSubmitting(true);
@@ -96,7 +108,8 @@ function ExpensesPage() {
           toast.error("Failed to add expense");
         }
       } else {
-        toast.error("Failed to add expense");
+        const errData = await res.json().catch(() => ({}));
+        toast.error(`Could not add expense. ${apiErrorMessage(errData)}`);
       }
     } catch (err) {
       toast.error("Error adding expense");
@@ -118,14 +131,13 @@ function ExpensesPage() {
   }, [expenses]);
 
   const total = expenseByCategory.reduce((s, c) => s + c.value, 0);
-  const breakEven = 42300;
-  const expectedRevenue = 74800;
+  const topCategory = [...expenseByCategory].sort((a, b) => b.value - a.value)[0];
 
   return (
     <div>
       <PageHeader
         title="Expense Tracker"
-        subtitle={`${currentSeason().label} · ${activeFarmId ? "Active Farm" : "All Farms"} · ₹${total.toLocaleString("en-IN")} spent so far`}
+        subtitle={`${currentSeason().label} · ${activeFarmId ? "Active Farm" : "All Farms"} · ₹${formatRs(total)} spent so far`}
       />
 
       {/* Insight cards */}
@@ -135,16 +147,12 @@ function ExpensesPage() {
             <Wallet className="h-3.5 w-3.5 text-primary" /> Season spend
           </div>
           <div className="mt-2 font-display text-2xl font-bold">
-            ₹{total.toLocaleString("en-IN")}
+            ₹{formatRs(total)}
           </div>
           <div className="mt-1 text-[11px] text-muted-foreground">
-            {breakEven > 0 ? Math.round((total / breakEven) * 100) : 0}% of planned budget
-          </div>
-          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-secondary">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-primary to-cyan"
-              style={{ width: `${Math.min((total / breakEven) * 100, 100)}%` }}
-            />
+            {expenses.length === 0
+              ? "No expenses recorded yet"
+              : `${expenses.length} ${expenses.length === 1 ? "entry" : "entries"} · most on ${topCategory?.name ?? "—"}`}
           </div>
         </div>
         <div className="glass hover-lift flex flex-col justify-center rounded-2xl p-5 lg:col-span-2">
@@ -224,7 +232,7 @@ function ExpensesPage() {
                     ))}
                   </Pie>
                   <Tooltip
-                    formatter={(v) => `₹${v.toLocaleString("en-IN")}`}
+                    formatter={(v) => `₹${formatRs(v)}`}
                     contentStyle={{
                       background: "var(--color-popover)",
                       border: "1px solid var(--color-border)",
@@ -243,7 +251,7 @@ function ExpensesPage() {
               <div key={c.name} className="flex items-center gap-2.5 text-xs">
                 <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: COLORS[i % COLORS.length] }} />
                 <span className="min-w-0 flex-1 truncate text-muted-foreground">{c.name}</span>
-                <span className="font-semibold">₹{c.value.toLocaleString("en-IN")}</span>
+                <span className="font-semibold">₹{formatRs(c.value)}</span>
                 <span className="w-10 text-right text-[10px] text-muted-foreground">
                   {total > 0 ? Math.round((c.value / total) * 100) : 0}%
                 </span>
@@ -256,12 +264,12 @@ function ExpensesPage() {
         <section className="glass rounded-2xl p-5 lg:col-span-2">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="font-display text-sm font-semibold">Recent expenses</h2>
-            <span className="text-[11px] text-muted-foreground">{expenses.length} records</span>
+            <span className="text-[11px] text-muted-foreground">{expenses.length} {expenses.length === 1 ? "record" : "records"}</span>
           </div>
           <div className="space-y-2">
             {expenses.length === 0 ? (
               <div className="grid place-items-center rounded-xl border border-dashed border-border py-8 text-xs text-muted-foreground">
-                No expenses recorded yet. Use the quick-add form below!
+                No expenses recorded yet. Use Quick add expense to record one.
               </div>
             ) : (
               expenses.map((x) => {
@@ -284,7 +292,7 @@ function ExpensesPage() {
                     </div>
                     <div className="shrink-0 text-right">
                       <span className="font-display text-sm font-bold">
-                        ₹{(x.amountRs || x.amount || 0).toLocaleString("en-IN")}
+                        ₹{formatRs(x.amountRs || x.amount || 0)}
                       </span>
                     </div>
                   </div>

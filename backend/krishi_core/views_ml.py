@@ -28,6 +28,7 @@ from PIL import Image
 from django.conf import settings
 from rest_framework import status
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+from .parsers import ObjectJSONParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -52,7 +53,7 @@ logger = logging.getLogger("core.views")
 
 class RetrieveView(APIView):
     """RAG semantic search over the ChromaDB knowledge base using the advanced RAGRetriever."""
-    parser_classes = [JSONParser]
+    parser_classes = [ObjectJSONParser]
 
     def post(self, request):
         from krishi_core.services.ai_engine.rag_retriever import rag_retriever
@@ -86,7 +87,7 @@ class SoilRecommendView(APIView):
     features feed a RandomForest classifier; falls back to a rule-based heuristic
     scorer if the model isn't loaded).
     """
-    parser_classes = [JSONParser]
+    parser_classes = [ObjectJSONParser]
     throttle_classes = [AIRateThrottle]
 
     def post(self, request):
@@ -98,7 +99,12 @@ class SoilRecommendView(APIView):
         nitrogen = d["nitrogen"]
         phosphorus = d["phosphorus"]
         potassium = d["potassium"]
-        org_carbon = d["organicCarbon"]
+        # EC / organic carbon are optional. Rules below need a number, so a
+        # neutral 0.5 % is used internally, but only values the farmer entered
+        # are ever shown or sent to the AI summary.
+        org_carbon_given = d["organicCarbon"]
+        ec_given = d["ec"]
+        org_carbon = org_carbon_given if org_carbon_given is not None else 0.5
         season_in = d["season"].lower()
         area_acres = d["areaAcres"]
         water_avail = d["waterAvailability"].lower()
@@ -155,8 +161,8 @@ class SoilRecommendView(APIView):
                     "Region": d.get("state", "Maharashtra"),
                     "Soil_pH": ph,
                     "Soil_Moisture": 40.0,
-                    "Organic_Carbon": org_carbon,
-                    "Electrical_Conductivity": d.get("ec", 0.4),
+                    "Organic_Carbon": org_carbon_given,
+                    "Electrical_Conductivity": ec_given,
                     "Nitrogen_Level": nitrogen,
                     "Phosphorus_Level": phosphorus,
                     "Potassium_Level": potassium,
@@ -191,15 +197,23 @@ class SoilRecommendView(APIView):
                     parts.append(f"{label} {val:g} kg/ha ({soil_classes[key]})")
             soil_desc = "Soil test: " + ", ".join(parts) + "."
 
+        extra_bits = []
+        if ec_given is not None:
+            extra_bits.append(f"EC {ec_given:g} dS/m")
+        if org_carbon_given is not None:
+            extra_bits.append(f"Organic carbon {org_carbon_given:g}%")
+        extra_soil = (" " + ", ".join(extra_bits) + ".") if extra_bits else ""
+
         llm_summary = ""
         try:
             from krishi_core.services.ai_engine.llm_service import llm_service
             prompt = f"""
 You are an agricultural expert. A farmer is asking for crop recommendations for their land.
-{soil_desc}{"" if soil_basis == "assumed" else f" EC {d.get('ec', 0)}, Organic Carbon {org_carbon}."}
+{soil_desc}{extra_soil}
 The top crops recommended by our engine are:
 {', '.join([r['cropName'] for r in results])}
 
+Mention only the soil values listed above; do not assume or invent any other soil readings.
 Write a short, engaging 2-paragraph summary directly to the farmer. Explain why the top pick ({results[0]['cropName']}) is the best choice based on their soil and local climate, and briefly mention the alternatives.{" Also encourage them to add their Soil Health Card values for a more precise recommendation." if soil_basis != "soil_test" else ""}
 Keep it conversational, encouraging, and formatted in plain text (no markdown formatting needed).
 """
@@ -447,7 +461,7 @@ TASK_CALENDAR_TO_KB_STAGE_MAP = {
 
 class CropStageTipsView(APIView):
     """RAG-powered field tips for a crop + growth stage (Crop Plan timeline)."""
-    parser_classes = [JSONParser]
+    parser_classes = [ObjectJSONParser]
 
     def post(self, request):
         collection = ml_loader.state["collection"]
@@ -530,16 +544,6 @@ class PredictDiseaseView(APIView):
     throttle_classes = [AIRateThrottle]
 
     def post(self, request):
-        gemini_key = getattr(settings, "GEMINI_API_KEY", "")
-        if not gemini_key:
-            return Response({
-                "error": "Disease inference service is not configured (GEMINI_API_KEY missing).",
-                "status": "failed",
-                "disease": "Service Unavailable",
-                "confidence": 0.0,
-                "treatment": "Please configure GEMINI_API_KEY in the server environment to enable plant disease diagnosis.",
-            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-
         image_file = request.FILES.get("image")
         if not image_file:
             return Response({
@@ -570,6 +574,34 @@ class PredictDiseaseView(APIView):
                 "confidence": 0.0,
                 "treatment": "Upload a valid image file (JPG, PNG, or WEBP).",
             }, status=status.HTTP_400_BAD_REQUEST)
+
+        # The bytes must really be an image (a renamed text/PDF file passes the
+        # MIME check above because browsers guess the type from the extension).
+        # HEIC/HEIF (iPhone) can't be opened by Pillow but Gemini reads it.
+        try:
+            if mime_type not in ("image/heic", "image/heif"):
+                from PIL import Image
+                with Image.open(image_file) as probe:
+                    probe.verify()
+            image_file.seek(0)
+        except Exception:
+            return Response({
+                "error": "This file is not a readable image. Please upload a JPEG, PNG, or WEBP photo.",
+                "status": "failed",
+                "disease": "Invalid File Format",
+                "confidence": 0.0,
+                "treatment": "Upload a valid image file (JPG, PNG, or WEBP).",
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        gemini_key = getattr(settings, "GEMINI_API_KEY", "")
+        if not gemini_key:
+            return Response({
+                "error": "Disease inference service is not configured (GEMINI_API_KEY missing).",
+                "status": "failed",
+                "disease": "Service Unavailable",
+                "confidence": 0.0,
+                "treatment": "Please configure GEMINI_API_KEY in the server environment to enable plant disease diagnosis.",
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
         try:
             import base64
@@ -910,7 +942,7 @@ class DecisionEngineView(APIView):
     Advanced AI orchestration endpoint ported from Farmsense.
     Expects { "user_query": "...", "ml_predictions": {...}, "weather": {...}, "history": {...} }
     """
-    parser_classes = [JSONParser]
+    parser_classes = [ObjectJSONParser]
     throttle_classes = [AIRateThrottle]
     
     def post(self, request):

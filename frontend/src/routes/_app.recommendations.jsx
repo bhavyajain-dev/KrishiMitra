@@ -154,8 +154,8 @@ export function RecommendationsView() {
       nitrogen: soilValue(activeFarm?.nitrogen),
       phosphorus: soilValue(activeFarm?.phosphorus),
       potassium: soilValue(activeFarm?.potassium),
-      organicCarbon: Number(activeFarm?.organicCarbon) || 0.6,
-      ec: Number(activeFarm?.ec) || 0.35,
+      organicCarbon: soilValue(activeFarm?.organicCarbon),
+      ec: soilValue(activeFarm?.ec),
       season,
       areaAcres: Number(activeFarm?.areaAcres) || 2.0,
       waterAvailability: (activeFarm?.waterLevel || activeFarm?.waterAvailability || "medium").toLowerCase(),
@@ -214,8 +214,10 @@ export function RecommendationsView() {
     }
   };
 
-  const farmHasSoilTest = ["ph", "nitrogen", "phosphorus", "potassium"]
-    .every((k) => soilValue(activeFarm?.[k]) !== null);
+  const soilFilled = ["ph", "nitrogen", "phosphorus", "potassium"]
+    .filter((k) => soilValue(activeFarm?.[k]) !== null).length;
+  const farmHasSoilTest = soilFilled === 4;
+  const showSoil = (v) => (soilValue(v) === null ? "—" : v);
   const primary = results?.find((r) => r.isTopPick) || results?.[0];
   const others = results?.filter((r) => !r.isTopPick) || [];
 
@@ -253,12 +255,26 @@ export function RecommendationsView() {
         <div className="glass flex items-start gap-3 rounded-2xl border border-warning/30 bg-warning/5 p-4 text-xs leading-relaxed">
           <FlaskConical className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
           <div>
-            <span className="font-semibold text-foreground">No soil test for this farm yet.</span>{" "}
-            <span className="text-muted-foreground">
-              Recommendations use your local climate, season and region only. Add your Soil Health Card values
-              (pH, N, P, K) to get a soil-specific recommendation.
-            </span>{" "}
-            <Link to="/farms" className="font-semibold text-primary hover:underline">Add soil test →</Link>
+            {soilFilled === 0 ? (
+              <>
+                <span className="font-semibold text-foreground">No soil test for this farm yet.</span>{" "}
+                <span className="text-muted-foreground">
+                  Recommendations use your local climate, season and region only. Add your Soil Health Card values
+                  (pH, N, P, K) to get a soil-specific recommendation.
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="font-semibold text-foreground">Soil test incomplete ({soilFilled} of 4 values).</span>{" "}
+                <span className="text-muted-foreground">
+                  Recommendations use the values you entered and typical soils for the rest. Add all of pH, N, P and K
+                  for a fully soil-specific recommendation.
+                </span>
+              </>
+            )}{" "}
+            <Link to="/farms" className="font-semibold text-primary hover:underline">
+              {soilFilled === 0 ? "Add soil test →" : "Complete soil test →"}
+            </Link>
           </div>
         </div>
       )}
@@ -333,17 +349,17 @@ export function RecommendationsView() {
             <div className="mt-6 mb-8 max-w-md mx-auto grid grid-cols-3 gap-2.5 text-left text-xs bg-secondary/20 rounded-2xl p-4 border border-border/50">
               <div className="rounded-xl bg-background/50 p-2.5">
                 <div className="text-[10px] text-muted-foreground uppercase font-semibold">Soil pH</div>
-                <div className="mt-0.5 font-bold text-foreground">{activeFarm.ph || "6.8 (Neutral)"}</div>
+                <div className="mt-0.5 font-bold text-foreground">{showSoil(activeFarm.ph)}</div>
               </div>
               <div className="rounded-xl bg-background/50 p-2.5">
                 <div className="text-[10px] text-muted-foreground uppercase font-semibold">NPK Balance</div>
                 <div className="mt-0.5 font-bold text-foreground">
-                  {activeFarm.nitrogen || 140}:{activeFarm.phosphorus || 35}:{activeFarm.potassium || 180}
+                  {showSoil(activeFarm.nitrogen)}:{showSoil(activeFarm.phosphorus)}:{showSoil(activeFarm.potassium)}
                 </div>
               </div>
               <div className="rounded-xl bg-background/50 p-2.5">
                 <div className="text-[10px] text-muted-foreground uppercase font-semibold">Water</div>
-                <div className="mt-0.5 font-bold text-foreground capitalize">{activeFarm.waterAvailability || "Medium"}</div>
+                <div className="mt-0.5 font-bold text-foreground capitalize">{activeFarm.waterLevel || "—"}</div>
               </div>
             </div>
           )}

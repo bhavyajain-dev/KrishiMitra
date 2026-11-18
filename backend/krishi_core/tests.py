@@ -1050,3 +1050,122 @@ class ImportMarketCsvTests(TestCase):
         self.assertEqual(MarketPrice.objects.count(), 2)
         self.assertEqual(MarketPrice.objects.get(commodity="Wheat").modal_price, 2450)
         self.assertEqual(MarketPrice.objects.get(commodity="Cotton").state, "Gujarat")
+
+
+class DataOwnershipAndValidationTests(TestCase):
+    """Users can only touch their own farms; bad input gets a clean 400."""
+
+    def setUp(self):
+        from rest_framework_simplejwt.tokens import AccessToken
+        self.a = User.objects.create_user(username="a@example.test", email="a@example.test", phone="9000000001", password="TestPass123!x")
+        self.b = User.objects.create_user(username="b@example.test", email="b@example.test", phone="9000000002", password="TestPass123!x")
+        self.A, self.B = APIClient(), APIClient()
+        self.A.credentials(HTTP_AUTHORIZATION=f"Bearer {AccessToken.for_user(self.a)}")
+        self.B.credentials(HTTP_AUTHORIZATION=f"Bearer {AccessToken.for_user(self.b)}")
+        self.farm = self.A.post("/api/farms", {"name": "A farm", "areaAcres": 5}, format="json").data["id"]
+        self.b_farm = self.B.post("/api/farms", {"name": "B farm", "areaAcres": 2}, format="json").data["id"]
+
+    def test_cannot_attach_records_to_another_users_farm(self):
+        cases = {
+            "/api/expenses": {"label": "Seed", "category": "seeds", "amountRs": 100},
+            "/api/crop-plans": {"cropName": "Wheat", "season": "rabi", "sowingDate": "2026-11-20", "expectedHarvestDate": "2027-03-20"},
+            "/api/recommendations": {"season": "rabi", "cropOptions": []},
+            "/api/alerts": {"category": "weather", "title": "Rain", "message": "Heavy rain"},
+        }
+        for path, payload in cases.items():
+            self.assertEqual(self.B.post(path, {**payload, "farm": self.farm}, format="json").status_code, 400, path)
+            self.assertEqual(self.A.post(path, {**payload, "farm": self.farm}, format="json").status_code, 201, path)
+
+    def test_cannot_move_expense_to_another_users_farm(self):
+        exp = self.B.post("/api/expenses", {"farm": self.b_farm, "label": "x", "category": "seeds", "amountRs": 1}, format="json").data["id"]
+        self.assertEqual(self.B.patch(f"/api/expenses/{exp}", {"farm": self.farm}, format="json").status_code, 400)
+
+    def test_expense_crop_plan_must_match_farm(self):
+        plan = self.A.post("/api/crop-plans", {"farm": self.farm, "cropName": "Wheat", "season": "rabi",
+                           "sowingDate": "2026-11-20", "expectedHarvestDate": "2027-03-20"}, format="json").data["id"]
+        other = self.A.post("/api/farms", {"name": "A2", "areaAcres": 1}, format="json").data["id"]
+        res = self.A.post("/api/expenses", {"farm": other, "cropPlan": plan, "label": "x", "category": "seeds", "amountRs": 1}, format="json")
+        self.assertEqual(res.status_code, 400)
+
+    def test_farm_rejects_impossible_values(self):
+        for bad in ({"areaAcres": -5}, {"areaAcres": 0}, {"areaAcres": "nan"}, {"ph": 25}, {"ph": 2},
+                    {"nitrogen": -10}, {"phosphorus": 301}, {"name": "   "}, {"location": {"lat": 100, "lon": 1}}):
+            res = self.A.post("/api/farms", {"name": "F", "areaAcres": 5, **bad}, format="json")
+            self.assertEqual(res.status_code, 400, bad)
+        ok = self.A.post("/api/farms", {"name": "F", "areaAcres": 5, "ph": 6.5, "nitrogen": 0, "waterResources": "Canal"}, format="json")
+        self.assertEqual(ok.status_code, 201)
+        self.assertEqual(ok.data["waterResources"], ["Canal"])
+
+    def test_crop_plan_harvest_must_follow_sowing(self):
+        res = self.A.post("/api/crop-plans", {"farm": self.farm, "cropName": "Wheat", "season": "rabi",
+                          "sowingDate": "2026-11-20", "expectedHarvestDate": "2026-10-01"}, format="json")
+        self.assertEqual(res.status_code, 400)
+
+    def test_users_endpoint_is_read_only(self):
+        self.assertEqual(self.A.patch(f"/api/users/{self.a.id}", {"isVerified": True}, format="json").status_code, 405)
+        self.assertEqual(self.A.post("/api/users", {"username": "x"}, format="json").status_code, 405)
+
+    def test_chat_plan_mode_ignores_other_users_farm(self):
+        with patch("krishi_core.views.Farm.objects.filter", wraps=__import__("krishi_core").models.Farm.objects.filter) as spy:
+            self.B.post("/api/chat", {"message": "Crop: Wheat, Season: Rabi", "forceJson": True,
+                                      "farmId": self.farm, "sessionId": "x"}, format="json")
+        for call in spy.call_args_list:
+            if "id" in call.kwargs:
+                self.assertEqual(call.kwargs.get("owner"), self.b)
+
+
+class ProfileAndInputSafetyTests(TestCase):
+    def setUp(self):
+        from rest_framework_simplejwt.tokens import AccessToken
+        self.a = User.objects.create_user(username="a@example.test", email="a@example.test", phone="9000000001", password="TestPass123!x", first_name="A")
+        User.objects.create_user(username="b@example.test", email="b@example.test", phone="9000000002", password="TestPass123!x")
+        self.A = APIClient()
+        self.A.credentials(HTTP_AUTHORIZATION=f"Bearer {AccessToken.for_user(self.a)}")
+
+    def test_duplicate_phone_is_clean_400(self):
+        res = self.A.patch("/api/auth/profile", {"phone": "9000000002"}, format="json")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("already used", res.data["message"])
+
+    def test_phone_is_normalised(self):
+        self.assertEqual(self.A.patch("/api/auth/profile", {"phone": "+91 98765 43210"}, format="json").status_code, 200)
+        self.a.refresh_from_db()
+        self.assertEqual(self.a.phone, "9876543210")
+        self.assertEqual(self.A.patch("/api/auth/profile", {"phone": "123"}, format="json").status_code, 400)
+
+    def test_email_change_is_refused_clearly(self):
+        res = self.A.patch("/api/auth/profile", {"email": "b@example.test"}, format="json")
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(self.A.patch("/api/auth/profile", {"email": "a@example.test", "firstName": "Asha"}, format="json").status_code, 200)
+
+    def test_profile_rejects_bad_choices_and_blank_name(self):
+        for bad in ({"firstName": ""}, {"language": "xx"}, {"farmingMode": "chaos"}, {"firstName": "x" * 200}):
+            self.assertEqual(self.A.patch("/api/auth/profile", bad, format="json").status_code, 400, bad)
+
+    def test_change_password_uses_full_policy(self):
+        weak = self.A.post("/api/auth/change-password", {"oldPassword": "TestPass123!x", "newPassword": "123456"}, format="json")
+        self.assertEqual(weak.status_code, 400)
+        ok = self.A.post("/api/auth/change-password", {"oldPassword": "TestPass123!x", "newPassword": "NewPass456!y"}, format="json")
+        self.assertEqual(ok.status_code, 200)
+
+    def test_market_limit_junk_does_not_crash(self):
+        for q in ("abc", "-5", "0", "999999", ""):
+            self.assertEqual(APIClient().get(f"/api/market/prices?limit={q}").status_code, 200, q)
+
+    def test_bad_token_does_not_block_public_endpoints(self):
+        c = APIClient()
+        c.credentials(HTTP_AUTHORIZATION="Bearer null")
+        self.assertEqual(c.get("/api/market/locations").status_code, 200)
+        self.assertEqual(c.get("/api/health").status_code, 200)
+        self.assertEqual(c.get("/api/farms").status_code, 401)
+
+    def test_non_object_json_and_wrong_types_are_400(self):
+        c = APIClient()
+        self.assertEqual(c.post("/api/auth/login", [], format="json").status_code, 400)
+        self.assertEqual(c.post("/api/auth/login", {"email": ["x"], "password": "y"}, format="json").status_code, 400)
+        self.assertEqual(self.A.post("/api/chat", {"message": "a" * 8001}, format="json").status_code, 400)
+
+    def test_weather_cache_write_needs_login_and_valid_data(self):
+        self.assertEqual(APIClient().post("/api/weather/cache", {"locationKey": "pune", "data": {}}, format="json").status_code, 401)
+        self.assertEqual(self.A.post("/api/weather/cache", {"locationKey": "pune", "lat": "abc", "data": {}}, format="json").status_code, 400)
+        self.assertEqual(self.A.post("/api/weather/cache", {"locationKey": "pune", "lat": 18.5, "lon": 73.8, "data": {}}, format="json").status_code, 200)

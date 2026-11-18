@@ -70,11 +70,11 @@ function Dashboard() {
         if (!res.ok) return;
         const data = await res.json();
         const current = {
-          temp: Math.round(data.current?.temperature ?? 28),
-          humidity: data.current?.humidity ?? 65,
-          wind: Math.round(data.current?.wind_speed ?? 12),
-          uv: data.daily_forecast?.[0]?.uv_index_max ?? 5,
-          rainChance: data.daily_forecast?.[0]?.precipitation_probability_max ?? 10,
+          temp: data.current?.temperature != null ? Math.round(data.current.temperature) : null,
+          humidity: data.current?.humidity ?? null,
+          wind: data.current?.wind_speed != null ? Math.round(data.current.wind_speed) : null,
+          uv: data.daily_forecast?.[0]?.uv_index_max ?? null,
+          rainChance: data.daily_forecast?.[0]?.precipitation_probability_max ?? null,
           todayRainMm: data.current?.precipitation ?? 0,
           condition: address,
           cityName: address,
@@ -236,12 +236,21 @@ function Dashboard() {
                 </div>
               ))}
             </div>
-            <Link
-              to="/weather"
-              className="mt-3 flex items-center justify-center gap-1 text-[11px] font-medium text-cyan hover:underline"
-            >
-              7-day forecast <ArrowUpRight className="h-3 w-3" />
-            </Link>
+            {activeFarm ? (
+              <Link
+                to="/weather"
+                className="mt-3 flex items-center justify-center gap-1 text-[11px] font-medium text-cyan hover:underline"
+              >
+                7-day forecast <ArrowUpRight className="h-3 w-3" />
+              </Link>
+            ) : (
+              <Link
+                to="/farms"
+                className="mt-3 flex items-center justify-center gap-1 text-[11px] font-medium text-cyan hover:underline"
+              >
+                Add a farm to see your local weather <ArrowUpRight className="h-3 w-3" />
+              </Link>
+            )}
           </div>
         </div>
       </section>

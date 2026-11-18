@@ -775,7 +775,8 @@ Please analyze this stage of growth and provide actionable advice on:
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">Area for this Crop (Acres)</label>
                 <input 
                   type="number" 
-                  step="0.1" 
+                  step="any" 
+                  min="0.01"
                   max={availableArea} 
                   required 
                   value={aiForm.areaAcres || ""} 

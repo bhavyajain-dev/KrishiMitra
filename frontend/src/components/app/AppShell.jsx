@@ -52,6 +52,12 @@ const nav = [
   { label: "Expenses", to: "/expenses", icon: Wallet },
 ];
 
+// Pages reached from inside the app (not in the sidebar) still need a title.
+const extraTitles = [
+  { label: "Recommendations", to: "/recommendations" },
+  { label: "AI Mitra", to: "/ai-saathi" },
+];
+
 const secondaryNav = [
   { label: "Settings & Profile", to: "/profile", icon: User },
 ];
@@ -185,7 +191,7 @@ export function AppShell({ children }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { userProfile, activeFarm, alerts = [] } = useAppData();
   const current =
-    [...nav, ...secondaryNav].find((n) => pathname === n.to || pathname.startsWith(n.to + "/"))
+    [...nav, ...secondaryNav, ...extraTitles].find((n) => pathname === n.to || pathname.startsWith(n.to + "/"))
       ?.label ?? "Dashboard";
   const unreadAlerts = alerts.filter((a) => a.severity !== "info").length;
 
