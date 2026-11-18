@@ -19,7 +19,7 @@ function Landing() {
     <div className="min-h-screen bg-background text-foreground font-sans selection:bg-primary/30">
       
       {/* Navbar */}
-      <header className="fixed top-4 sm:top-6 left-1/2 -translate-x-1/2 z-50 w-[95%] sm:w-[90%] max-w-5xl rounded-full glass border border-foreground/10 px-3.5 sm:px-6 py-2 sm:py-3 flex items-center justify-between shadow-2xl">
+      <header style={{ backgroundColor: "color-mix(in oklab, var(--color-background) 90%, transparent)" }} className="fixed top-4 sm:top-6 left-1/2 -translate-x-1/2 z-50 w-[95%] sm:w-[90%] max-w-5xl rounded-full glass backdrop-blur-xl border border-foreground/10 px-3.5 sm:px-6 py-2 sm:py-3 flex items-center justify-between shadow-2xl">
         <BrandMark />
         <div className="flex items-center gap-1.5 xs:gap-2.5 sm:gap-4 shrink-0">
           <ThemeToggle />
@@ -67,7 +67,7 @@ function Landing() {
             <span className="text-primary italic pr-2">grows</span> with you.
           </h1>
 
-          <p className="text-muted-foreground text-base sm:text-xl max-w-2xl mb-10">
+          <p className="text-muted-foreground text-base sm:text-xl max-w-2xl mb-10 text-balance">
             Crop recommendations from your soil test, weather alerts, leaf disease detection and mandi prices, in one place for Indian farmers.
           </p>
 
@@ -153,7 +153,7 @@ function Landing() {
       </section>
 
       {/* More features + how it works */}
-      <section className="relative py-12 sm:py-24 px-4 sm:px-6 flex justify-center overflow-hidden">
+      <section className="relative pt-12 pb-10 sm:pt-24 sm:pb-14 px-4 sm:px-6 flex justify-center overflow-hidden">
         <div className="relative z-10 w-full max-w-5xl glass-strong rounded-[2.5rem] border border-foreground/20 p-5 sm:p-12 shadow-2xl overflow-hidden">
 
            <div className="mb-8 sm:mb-10">
@@ -241,11 +241,9 @@ function Landing() {
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-foreground/10 px-6 py-8">
-        <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-3 text-center sm:flex-row sm:text-left">
-          <BrandMark />
-          <p className="text-xs text-muted-foreground">© 2026 KrishiMitra · Smart farming assistant for Indian farmers</p>
-        </div>
+      <footer className="border-t border-foreground/10 px-6 py-6 text-center">
+        <p className="text-sm font-medium text-foreground">© 2026 KrishiMitra</p>
+        <p className="mt-1 text-sm text-muted-foreground">Smart farming assistant for Indian farmers</p>
       </footer>
     </div>
   );
