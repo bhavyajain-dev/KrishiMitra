@@ -53,16 +53,21 @@ class UserSerializer(BaseModelSerializer):
     lastName = serializers.CharField(source='last_name', allow_blank=True, default='')
     # Expose `_id` as string so frontend code that checks `user._id` still works
     _id = serializers.SerializerMethodField()
+    # False for accounts made with "Continue with Google" (no password yet).
+    hasPassword = serializers.SerializerMethodField()
 
     def get__id(self, obj):
         return str(obj.id)
+
+    def get_hasPassword(self, obj):
+        return obj.has_usable_password()
 
     class Meta:
         model = User
         fields = [
             'id', '_id', 'username', 'firstName', 'lastName', 'email', 'phone',
             'role', 'farmingMode', 'language', 'avatarUrl', 'location',
-            'isVerified', 'settings', 'date_joined'
+            'isVerified', 'settings', 'date_joined', 'hasPassword'
         ]
 
 # Limits for farm inputs. Soil values follow the Soil Health Card ranges

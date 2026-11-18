@@ -45,6 +45,7 @@ function MarketPage() {
   const [locationLoaded, setLocationLoaded] = useState(Boolean(userLocation?.state));
   
   // Dependent dropdown data
+  const [availableStates, setAvailableStates] = useState([]);
   const [availableDistricts, setAvailableDistricts] = useState([]);
   const [availableMarkets, setAvailableMarkets] = useState([]);
   const [allCommodities, setAllCommodities] = useState(DEFAULT_CROPS);
@@ -111,6 +112,7 @@ function MarketPage() {
         });
         if (res.ok) {
           const data = await res.json();
+          if (Array.isArray(data.states) && data.states.length) setAvailableStates(data.states);
           if (data.districts) setAvailableDistricts(data.districts);
           if (data.markets) setAvailableMarkets(data.markets);
         }
@@ -374,7 +376,7 @@ Instructions:
                   className="w-full appearance-none rounded-xl border border-input bg-background pl-10 pr-4 py-2 text-sm outline-none focus:border-primary/50 transition-colors"
                 >
                   <option value="">All India</option>
-                  {["Andhra Pradesh","Assam","Bihar","Chhattisgarh","Gujarat","Haryana","Himachal Pradesh","Jharkhand","Karnataka","Kerala","Madhya Pradesh","Maharashtra","Odisha","Punjab","Rajasthan","Tamil Nadu","Telangana","Uttar Pradesh","Uttarakhand","West Bengal"].map(s => (
+                  {(stateFilter && !availableStates.includes(stateFilter) ? [stateFilter, ...availableStates] : availableStates).map(s => (
                     <option key={s} value={s}>{s}</option>
                   ))}
                 </select>

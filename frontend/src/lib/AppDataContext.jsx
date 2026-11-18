@@ -103,6 +103,7 @@ export function AppDataProvider({ children }) {
           role: meData.user.role,
           farmingMode: meData.user.farmingMode,
           phone: meData.user.phone,
+          hasPassword: meData.user.hasPassword !== false,
         });
         if (meData.user.location && typeof meData.user.location === "string") {
           setUserLocation(prev => ({

@@ -32,6 +32,7 @@ from . import ml_loader
 from .services.geocoding import _GEOCODE_CACHE, INDIAN_AGRI_CITIES, geocode_lookup  # noqa: F401
 from .services.ai_engine.gemini_client import gemini_generate
 from .services.market_sync import maybe_refresh_in_background
+from .services.state_names import canonical_state, state_q
 from .throttles import AIRateThrottle
 
 logger = logging.getLogger(__name__)
@@ -223,6 +224,14 @@ def auth_login(request):
         return Response({
             'message': 'No account found with this email. Please sign up to create an account.',
             'accountNotFound': True
+        }, status=401)
+
+    if not user_obj.has_usable_password():
+        # Account was created with "Continue with Google": it has no password.
+        return Response({
+            'message': 'This account uses Google sign-in. Tap "Continue with Google", '
+                       'or use "Forgot password" to set a password.',
+            'googleOnly': True,
         }, status=401)
 
     user = authenticate(request, username=user_obj.username, password=password)
@@ -1206,7 +1215,7 @@ class MarketPriceViewSet(viewsets.ReadOnlyModelViewSet):
         commodity = self.request.query_params.get('commodity')
         limit = _safe_limit(self.request.query_params.get('limit'), default=200, maximum=1000)
         if state:
-            qs = qs.filter(state__iexact=state)
+            qs = qs.filter(state_q(state))
         if district:
             qs = qs.filter(district__iexact=district)
         if market_q:
@@ -1231,27 +1240,31 @@ class MarketPriceViewSet(viewsets.ReadOnlyModelViewSet):
 @api_view(['GET'])
 @permission_classes([permissions.AllowAny])
 def market_locations(request):
-    """Return distinct states and commodities for dropdowns."""
+    """States, districts, markets and commodities for the dropdowns.
+
+    States come from the data itself (one name per state), so every state
+    with prices can be picked and none without prices is offered.
+    """
     maybe_refresh_in_background()
     state_filter = request.query_params.get('state')
+    district_filter = request.query_params.get('district')
     qs = MarketPrice.objects.all()
     if state_filter:
-        qs = qs.filter(state__iexact=state_filter)
-    states = list(MarketPrice.objects.values_list(
-        'state', flat=True).distinct().order_by('state'))
-    commodities = list(
-        qs.values_list(
-            'commodity',
-            flat=True).distinct().order_by('commodity'))
+        qs = qs.filter(state_q(state_filter))
+    states = sorted({canonical_state(s) for s in
+                     MarketPrice.objects.values_list('state', flat=True).distinct() if s})
+    commodities = list(qs.values_list('commodity', flat=True).distinct().order_by('commodity'))
     districts = []
+    markets = []
     if state_filter:
-        districts = list(
-            qs.values_list(
-                'district',
-                flat=True).distinct().order_by('district'))
+        districts = list(qs.values_list('district', flat=True).distinct().order_by('district'))
+        if district_filter:
+            markets = list(qs.filter(district__iexact=district_filter)
+                           .values_list('market', flat=True).distinct().order_by('market'))
     return Response({'states': states,
                      'commodities': commodities,
-                     'districts': districts})
+                     'districts': districts,
+                     'markets': markets})
 
 
 @api_view(['GET'])
@@ -1267,7 +1280,7 @@ def market_history(request):
     if commodity:
         qs = qs.filter(commodity__icontains=commodity.strip())
     if state:
-        qs = qs.filter(state__iexact=state.strip())
+        qs = qs.filter(state_q(state.strip()))
     if district:
         qs = qs.filter(district__iexact=district.strip())
     if market_q:

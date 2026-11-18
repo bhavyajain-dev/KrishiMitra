@@ -66,6 +66,9 @@ function ProfileSettingsPage() {
 
   // Security OTP Recovery State (for users who forgot current password or signed in via Google)
   const [securityTab, setSecurityTab] = useState("password"); // "password" | "otp-reset"
+  // Google sign-up accounts have no password: they can only set one by email code.
+  const noPassword = userProfile?.hasPassword === false;
+  const activeSecurityTab = noPassword ? "otp-reset" : securityTab;
   const [otpStep, setOtpStep] = useState("request"); // "request" | "verify"
   const [otpCode, setOtpCode] = useState("");
   const [otpNewPassword, setOtpNewPassword] = useState("");
@@ -235,6 +238,7 @@ function ProfileSettingsPage() {
       setOtpConfirmPassword("");
       setSecurityTab("password");
       setOtpStep("request");
+      fetchDashboardData();
     } catch (err) {
       toast.error(err.message || "Invalid or expired verification code.");
     } finally {
@@ -365,6 +369,7 @@ function ProfileSettingsPage() {
               <h2 className="font-display text-lg font-semibold">Security</h2>
             </div>
             {/* Mode switch */}
+            {!noPassword && (
             <div className="flex items-center gap-1 rounded-xl border border-border bg-secondary/30 p-1 text-xs">
               <button
                 type="button"
@@ -389,9 +394,18 @@ function ProfileSettingsPage() {
                 Reset via OTP
               </button>
             </div>
+            )}
           </div>
 
-          {securityTab === "password" ? (
+          {noPassword && (
+            <p className="-mt-3 mb-5 rounded-xl border border-border/60 bg-secondary/30 p-3 text-xs leading-relaxed text-muted-foreground">
+              You signed up with Google, so your account has no password. You can keep using
+              <span className="font-semibold text-foreground"> Continue with Google</span>, or set a password below
+              with a code sent to your email to also sign in with email and password.
+            </p>
+          )}
+
+          {activeSecurityTab === "password" ? (
             <form onSubmit={handleChangePassword} className="space-y-4">
               <div>
                 <div className="flex items-center justify-between mb-1">

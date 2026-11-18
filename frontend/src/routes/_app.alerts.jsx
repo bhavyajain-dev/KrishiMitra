@@ -112,7 +112,9 @@ function AlertsPage() {
     <div>
       <PageHeader
         title="Risk Alerts"
-        subtitle={`${criticalCount} critical · ${warningCount} warnings · monitored for ${activeFarm?.name || "your farm"}`}
+        subtitle={activeFarm
+          ? `${criticalCount} critical · ${warningCount} warnings · monitored for ${activeFarm.name}`
+          : "Add a farm to start risk monitoring"}
         action={
           <div className="flex flex-wrap items-center gap-2">
             {dismissedAlerts.length > 0 && (
@@ -152,7 +154,7 @@ function AlertsPage() {
                   r.tone === "warning" ? "text-warning" : r.tone === "cyan" ? "text-cyan" : "text-primary"
                 }`}
               >
-                {r.level}
+                {activeFarm ? r.level : "—"}
               </span>
             </div>
             <div className="mt-3 text-xs font-medium">{r.label}</div>
@@ -195,9 +197,11 @@ function AlertsPage() {
           ) : (
             <>
               <ShieldAlert className="h-8 w-8 text-primary" />
-              <div className="mt-3 text-base font-semibold">All clear — no active alerts</div>
+              <div className="mt-3 text-base font-semibold">{activeFarm ? "All clear — no active alerts" : "No farm to monitor yet"}</div>
               <p className="mt-1 text-xs text-muted-foreground max-w-sm leading-relaxed">
-                KrishiMitra is continuously monitoring weather changes, crop growth milestones, and farm schedules. New alerts will appear here automatically when risk conditions are detected.
+                {activeFarm
+                  ? "KrishiMitra checks weather changes, crop growth milestones and farm schedules. New alerts appear here when risk conditions are detected."
+                  : "Add your farm with its location, and weather and schedule alerts for it will appear here."}
               </p>
             </>
           )}
