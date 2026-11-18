@@ -1972,7 +1972,9 @@ def weather_cache_get(request, key):
         data['cachedAt'] = dt.isoformat() if dt else None
         return Response(data)
     except WeatherCache.DoesNotExist:
-        return Response({'message': 'Not found'}, status=404)
+        # "Not cached yet" is normal, not an error (a 404 shows up red in the
+        # browser console on every first visit).
+        return Response({'data': None, 'source': 'none', 'locationKey': key})
 
 
 @api_view(['POST'])

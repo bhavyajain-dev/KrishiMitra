@@ -652,10 +652,13 @@ class ContextualAiAdvisoryTests(TestCase):
             "Rain Probability: 75%\n"
             "Wind Speed: 12 km/h"
         )
-        res = self.client.post("/api/chat", {"message": prompt, "sessionId": "test-session"}, format="json")
-        self.assertEqual(res.status_code, 200)
-        self.assertEqual(res["Content-Type"], "text/event-stream")
-        content = b"".join(res.streaming_content).decode("utf-8")
+        # Deterministic: no live Gemini call (its wording varies run to run),
+        # so the built-in agronomic advisory engine answers.
+        with patch("krishi_core.views.gemini_generate", return_value=(None, None)):
+            res = self.client.post("/api/chat", {"message": prompt, "sessionId": "test-session"}, format="json")
+            self.assertEqual(res.status_code, 200)
+            self.assertEqual(res["Content-Type"], "text/event-stream")
+            content = b"".join(res.streaming_content).decode("utf-8")
         self.assertIn("data: ", content)
         self.assertIn("[DONE]", content)
         self.assertTrue("Irrigation" in content or "Halt" in content or "advisory" in content.lower())
@@ -1344,3 +1347,19 @@ class ChatContextTests(TestCase):
             b"".join(res.streaming_content)
         self.assertNotIn("Nashik Plot", captured["p"])
         self.assertIn("has not added a farm", captured["p"])
+
+
+class QuietConsoleResponsesTests(TestCase):
+    """Expected situations answer 200 so browsers don't log red errors."""
+
+    def test_weather_handoff_is_200_with_fallback_url(self):
+        with patch("krishi_core.services.openmeteo_service.OpenMeteoService.get_forecast", return_value=None):
+            res = APIClient().get("/api/weather?latitude=20.0&longitude=73.8")
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res.data["needsBrowserFetch"])
+        self.assertTrue(res.data["fallbackUrl"].startswith("https://api.open-meteo.com/"))
+
+    def test_missing_weather_cache_is_200_empty(self):
+        res = APIClient().get("/api/weather/cache/nowhere")
+        self.assertEqual(res.status_code, 200)
+        self.assertIsNone(res.data["data"])

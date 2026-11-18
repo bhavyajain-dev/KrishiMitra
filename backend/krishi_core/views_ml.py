@@ -914,10 +914,13 @@ class WeatherView(APIView):
             # The host's shared IP may be rate-limited by Open-Meteo. Tell the
             # browser where to fetch the forecast itself; it then POSTs the raw
             # response back here for parsing + alerts (see post()).
+            # 200 (not 502): this is an expected hand-off, not a failure, and a
+            # 5xx would show as a red error in every visitor's browser console.
             return Response({
-                "error": "Failed to fetch weather data from upstream service",
+                "needsBrowserFetch": True,
+                "message": "Weather provider unreachable from the server; fetch it from the browser.",
                 "fallbackUrl": svc.forecast_url(lat, lon),
-            }, status=502)
+            }, status=200)
         
         # Generate dynamic weather alerts based on current conditions
         forecast["alerts"] = alert_engine.generate_alerts(forecast.get("current", {}))
