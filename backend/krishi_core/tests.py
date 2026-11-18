@@ -983,3 +983,41 @@ class PredictionsAndKbFallbackTests(TestCase):
         self.assertFalse(res.data.get("is_ml_prediction"))
         self.assertEqual(res.data.get("source"), "knowledge_base")
         self.assertIn("Immediate", res.data["irrigation_need"])
+
+
+class MarketSyncBulkUpsertTests(TestCase):
+    """sync_daily_market_data upserts in bulk: no duplicates, re-runs update prices."""
+
+    def _response(self, records):
+        from unittest.mock import MagicMock
+        resp = MagicMock()
+        resp.raise_for_status.return_value = None
+        resp.json.return_value = {"records": records}
+        return resp
+
+    def test_bulk_upsert_dedupes_and_updates(self):
+        import os
+        from unittest.mock import patch
+        from krishi_core.models import MarketPrice
+        from krishi_core.services.market_sync import sync_daily_market_data
+
+        rec = {"state": "Punjab", "district": "Ludhiana", "market": "Khanna", "commodity": "Wheat",
+               "variety": "Dara", "arrival_date": "18/11/2026", "min_price": "2300", "max_price": "2500",
+               "modal_price": "2400"}
+        other = dict(rec, commodity="Mustard", modal_price="5600")
+        dup = dict(rec, modal_price="2450")   # same key as rec inside one batch
+
+        with patch.dict(os.environ, {"DATAGOV_API_KEY": "test-key"}), \
+             patch("krishi_core.services.market_sync.requests.get",
+                   return_value=self._response([rec, other, dup])):
+            self.assertEqual(sync_daily_market_data(), 3)
+        self.assertEqual(MarketPrice.objects.count(), 2)
+        self.assertEqual(MarketPrice.objects.get(commodity="Wheat").modal_price, 2450)
+
+        updated = dict(rec, modal_price="2600")
+        with patch.dict(os.environ, {"DATAGOV_API_KEY": "test-key"}), \
+             patch("krishi_core.services.market_sync.requests.get",
+                   return_value=self._response([updated])):
+            sync_daily_market_data()
+        self.assertEqual(MarketPrice.objects.count(), 2)
+        self.assertEqual(MarketPrice.objects.get(commodity="Wheat").modal_price, 2600)
