@@ -1414,3 +1414,31 @@ class CropPlanSoilCorrectionDateTests(TestCase):
         plan = res.data["result"]["cropPlan"]
         corr = next(m for m in plan["milestones"] if m["stage"] == "Pre-sowing Soil Correction")
         self.assertLess(corr["plannedDate"], plan["sowingDate"])
+
+
+class NoEmbeddingModelInRequestsTests(TestCase):
+    """Requests must not depend on the neural embedding model (it can take
+    minutes to load on the free server and hung recommendations)."""
+
+    def test_reason_for_bracketed_crop_names(self):
+        from krishi_core.views_ml import SoilRecommendView
+        r = SoilRecommendView._rag_reason(None, "Rice (Paddy)", 6.5)
+        self.assertNotIn("suits your soil's pH", r)  # got the crop's own profile reason
+
+    def test_unknown_location_recommendation_is_fast_and_never_embeds(self):
+        import time
+        with patch("chromadb.utils.embedding_functions.ONNXMiniLM_L6_V2.__call__", side_effect=AssertionError("embedding used")):
+            t = time.time()
+            res = APIClient().post("/api/soil_recommend", {"ph": 6.5, "nitrogen": 300, "season": "rabi", "areaAcres": 2,
+                                                         "latitude": None, "longitude": None, "state": None,
+                                                         "address": "zzqx nowhere"}, format="json")
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res.data["recommendations"])
+        self.assertLess(time.time() - t, 30)
+
+    def test_kb_search_collection_filter_and_retrieve(self):
+        from krishi_core.services.kb_search import search
+        hits = search("potato late blight treatment", collections=("disease_treatments_kb",), limit=2, with_meta=True)
+        self.assertTrue(all(col == "disease_treatments_kb" for _t, col, _m in hits))
+        res = APIClient().post("/api/retrieve", {"query": "wheat irrigation", "n_results": 3}, format="json")
+        self.assertEqual(res.status_code, 200)
