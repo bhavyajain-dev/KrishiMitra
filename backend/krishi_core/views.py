@@ -1834,20 +1834,24 @@ Output ONLY a raw JSON object with this exact schema:
 """
                     ai_response = llm_service.generate_response(prompt)
                     if isinstance(ai_response, dict) and not "error" in ai_response:
+                        # Pre-sowing work happens in the week BEFORE sowing. (On the
+                        # sowing date it collided with the planting stage and
+                        # showed as "8 Nov - 7 Nov".)
+                        correction_date = (sowing_date_obj - timedelta(days=7)).strftime("%Y-%m-%d")
                         milestones.insert(0, {
                             "stage": "Pre-sowing Soil Correction",
-                            "plannedDate": sowing_date_str,
+                            "plannedDate": correction_date,
                             "description": ai_response.get("fixes", "Adjust soil nutrients before sowing.")
                         })
                         fertilizer_events.append({
-                            "day": 0,
+                            "day": -5,
                             "type": "Custom AI Recommendation",
                             "amount": ai_response.get("fertilizer_recommendation", "Apply standard NPK basal dose.")
                         })
                         if ai_response.get("add_as_task"):
                             tasks.append({
                                 "title": ai_response.get("task_title", "Soil Correction"),
-                                "date": sowing_date_str,
+                                "date": (sowing_date_obj - timedelta(days=5)).strftime("%Y-%m-%d"),
                                 "category": "fertilizer",
                                 "priority": "high",
                                 "description": ai_response.get("task_description", "Apply recommended fertilizers to correct soil profile.")
