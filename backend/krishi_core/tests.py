@@ -1171,7 +1171,10 @@ class ProfileAndInputSafetyTests(TestCase):
     def test_weather_cache_write_needs_login_and_valid_data(self):
         self.assertEqual(APIClient().post("/api/weather/cache", {"locationKey": "pune", "data": {}}, format="json").status_code, 401)
         self.assertEqual(self.A.post("/api/weather/cache", {"locationKey": "pune", "lat": "abc", "data": {}}, format="json").status_code, 400)
-        self.assertEqual(self.A.post("/api/weather/cache", {"locationKey": "pune", "lat": 18.5, "lon": 73.8, "data": {}}, format="json").status_code, 200)
+        good = {"current": {"temp": 24}, "daily": [{"hi": 30, "lo": 18}], "hourly": []}
+        self.assertEqual(self.A.post("/api/weather/cache", {"locationKey": "pune", "lat": 18.5, "lon": 73.8, "data": good}, format="json").status_code, 200)
+        raw = {"current": {"temperature": 24}, "daily_forecast": [], "hourly_forecast": []}
+        self.assertEqual(self.A.post("/api/weather/cache", {"locationKey": "pune", "data": raw}, format="json").status_code, 400)
 
 
 class GoogleOnlyAccountLoginTests(TestCase):
@@ -1361,5 +1364,16 @@ class QuietConsoleResponsesTests(TestCase):
 
     def test_missing_weather_cache_is_200_empty(self):
         res = APIClient().get("/api/weather/cache/nowhere")
+        self.assertEqual(res.status_code, 200)
+        self.assertIsNone(res.data["data"])
+
+
+
+class WeatherCacheFormatTests(TestCase):
+    def test_wrong_format_entry_is_a_miss_not_a_crash(self):
+        from krishi_core.models import WeatherCache
+        WeatherCache.objects.create(locationKey="surat-gujarat", cityName="Surat",
+                                    data={"current": {"temperature": 24}, "daily_forecast": [], "hourly_forecast": []})
+        res = APIClient().get("/api/weather/cache/surat-gujarat")
         self.assertEqual(res.status_code, 200)
         self.assertIsNone(res.data["data"])
