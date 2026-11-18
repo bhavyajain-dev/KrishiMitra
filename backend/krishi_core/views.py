@@ -1652,9 +1652,17 @@ def chat_stream(request):
     force_json = request.data.get('forceJson', False)
     field_id = request.data.get('field_id', None)
 
-    # Retrieve RAG context from ChromaDB if available
+    # Retrieve RAG context from ChromaDB if available. Greetings and very short
+    # small talk ("hi", "thanks") don't need farming documents, and the search
+    # is the slowest step on a small server, so skip it for them.
+    import re as _re
+    import time as _time
+    _t0 = _time.monotonic()
+    small_talk = bool(_re.fullmatch(
+        r"\s*(hi+|hello+|hey+|namaste|namaskar|kem cho|ram ram|thanks?|thank you|ok(ay)?|good (morning|evening|night))[\s!.?]*",
+        user_msg, _re.I)) or len(user_msg.split()) < 2
     rag_context = ""
-    chroma_client = ml_loader.state.get("chroma_client")
+    chroma_client = None if small_talk else ml_loader.state.get("chroma_client")
     if chroma_client:
         try:
             import re
@@ -1939,6 +1947,7 @@ Output ONLY a raw JSON object with this exact schema:
         }
         return Response({"result": result})
 
+    logger.info("chat: knowledge search %.1fs (skipped=%s)", _time.monotonic() - _t0, small_talk)
     farmer_context = _farmer_context(request.user, request.data.get('farmId'),
                                      request.data.get('weatherSnapshot'))
     history_text = _chat_history_text(request.user, session_id)
@@ -1992,7 +2001,9 @@ Output ONLY a raw JSON object with this exact schema:
         provider_used = None
 
         # ── Tier 1: Google Gemini ─────────────────────────────────────────────
+        _g0 = _time.monotonic()
         text_resp, gemini_model = gemini_generate(prompt_text, timeout=(4.0, 30.0), image=image_part)
+        logger.info("chat: gemini %.1fs (model=%s)", _time.monotonic() - _g0, gemini_model)
         if text_resp:
             provider_used = f"gemini:{gemini_model}"
             full_response = text_resp
