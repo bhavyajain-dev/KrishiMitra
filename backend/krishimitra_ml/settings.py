@@ -170,7 +170,7 @@ TIME_ZONE = os.getenv("TIME_ZONE", "Asia/Kolkata")
 
 # ── ML / RAG config (env-driven) ─────────────────────────────────────────
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-flash-lite-latest")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
 CHROMA_DB_PATH = os.getenv("CHROMA_DB_PATH", str(BASE_DIR / "knowledge-base" / "chroma_db"))
 DISABLE_TENSORFLOW_IMPORT = os.getenv("DISABLE_TENSORFLOW_IMPORT", "0") == "1"
 # ── Email Settings for Forgot Password OTP (SMTP Fallback) ─────────────
