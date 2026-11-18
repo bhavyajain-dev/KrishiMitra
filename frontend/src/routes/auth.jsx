@@ -1,3 +1,4 @@
+import { API_URL } from "@/lib/api";
 import { Link, createFileRoute, useNavigate, redirect } from "@tanstack/react-router";
 import { useState, useEffect, useRef } from "react";
 import {
@@ -88,11 +89,7 @@ const validatePasswordPolicy = (pwd) => {
   return null;
 };
 
-const getApiUrl = () =>
-  import.meta.env.VITE_API_URL ||
-  (typeof window !== "undefined"
-    ? `http://${window.location.hostname}:5001/api`
-    : "http://localhost:5001/api");
+const getApiUrl = () => API_URL;
 
 // Resilient fetch wrapper with client-side abort timeout
 async function fetchWithTimeout(url, options = {}, timeoutMs = 12000) {

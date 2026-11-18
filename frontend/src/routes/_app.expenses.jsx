@@ -1,3 +1,4 @@
+import { API_URL } from "@/lib/api";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { Plus, TrendingUp, Wallet, AlertCircle } from "lucide-react";
@@ -42,7 +43,7 @@ function ExpensesPage() {
     if (!token) return;
     try {
       const url = activeFarmId ? `/expenses?farm=${activeFarmId}` : `/expenses`;
-      const res = await fetch(`${import.meta.env.VITE_API_URL || (typeof window !== "undefined" ? `http://${window.location.hostname}:5001/api` : "http://localhost:5001/api")}${url}`, {
+      const res = await fetch(`${API_URL}${url}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
@@ -69,7 +70,7 @@ function ExpensesPage() {
     setExpenseErrors({});
     setIsSubmitting(true);
     try {
-      const API_URL = import.meta.env.VITE_API_URL || (typeof window !== "undefined" ? `http://${window.location.hostname}:5001/api` : "http://localhost:5001/api");
+      
       const res = await fetch(`${API_URL}/expenses`, {
         method: "POST",
         headers: {

@@ -69,8 +69,17 @@ class CropYieldPredictionView(APIView):
         serializer.is_valid(raise_exception=True)
         try:
             prediction = yield_service.predict(serializer.validated_data)
+            if prediction is None:
+                return Response({
+                    "predicted_yield": None,
+                    "unit": "t/ha",
+                    "source": "unsupported_crop",
+                    "is_ml_prediction": False,
+                    "note": "The yield model has no training data for this crop.",
+                })
             return Response({
                 "predicted_yield": prediction,
+                "unit": "t/ha",
                 "source": "ml_model" if yield_service._loaded else "unavailable",
                 "is_ml_prediction": yield_service._loaded,
                 "note": "HistGradientBoosting Yield Regressor" if yield_service._loaded else "Model artifact unavailable"

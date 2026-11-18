@@ -1,3 +1,4 @@
+import { API_URL } from "@/lib/api";
 import { Link, createFileRoute } from "@tanstack/react-router";
 import {
   ArrowRight,
@@ -52,8 +53,7 @@ function Dashboard() {
   // shows real data even without the user ever visiting the Weather page.
   useEffect(() => {
     if (!token || weatherSnapshot || !activeFarm?.location?.address) return;
-    const API_URL = import.meta.env.VITE_API_URL ||
-      (typeof window !== "undefined" ? `http://${window.location.hostname}:5001/api` : "http://localhost:5001/api");
+    
     const locationKey = activeFarm.location.address
       .toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 

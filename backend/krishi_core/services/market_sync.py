@@ -76,6 +76,67 @@ def sync_daily_market_data():
                 offset += limit
 
         print(f"\n[MarketSyncService] ✅ Daily sync complete! Total records updated/inserted: {total_processed}")
+        return total_processed
 
     except Exception as e:
-        print(f"[MarketSyncService] Sync failed: {e}")
+        # Don't echo the request URL: it contains the api-key query parameter.
+        print(f"[MarketSyncService] Sync failed: {type(e).__name__}")
+        return None
+
+
+# ── Refresh-when-stale (works on hosts that sleep, e.g. Render free tier) ─────
+# A 2 AM cron never fires while the instance is asleep, so the market endpoints
+# call maybe_refresh_in_background(): if the newest price is older than
+# MARKET_STALE_HOURS, one background thread re-syncs while the request returns
+# the current data immediately.
+import logging
+import threading
+from datetime import timedelta
+
+from django.utils import timezone
+
+logger = logging.getLogger(__name__)
+
+MARKET_STALE_HOURS = 24
+_refresh_lock = threading.Lock()
+_refresh_running = False
+
+
+def market_data_is_stale():
+    latest = MarketPrice.objects.order_by("-fetchedAt").values_list("fetchedAt", flat=True).first()
+    if latest is None:
+        return True
+    return timezone.now() - latest > timedelta(hours=MARKET_STALE_HOURS)
+
+
+def maybe_refresh_in_background():
+    """Start one background sync if data is stale and a key is configured.
+
+    Returns True when a refresh is running (started now or already running).
+    """
+    global _refresh_running
+    if not os.getenv("DATAGOV_API_KEY"):
+        return False
+    with _refresh_lock:
+        if _refresh_running:
+            return True
+        try:
+            if not market_data_is_stale():
+                return False
+        except Exception:
+            logger.warning("Could not check market data freshness", exc_info=True)
+            return False
+        _refresh_running = True
+
+    def _run():
+        global _refresh_running
+        from django.db import connection
+        try:
+            sync_daily_market_data()
+        finally:
+            connection.close()  # thread-local DB connection
+            with _refresh_lock:
+                _refresh_running = False
+
+    threading.Thread(target=_run, name="market-sync", daemon=True).start()
+    return True

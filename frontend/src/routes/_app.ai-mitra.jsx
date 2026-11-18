@@ -1,3 +1,4 @@
+import { API_URL } from "@/lib/api";
 import { createFileRoute, useLocation } from "@tanstack/react-router";
 import { useState, useRef, useEffect, useCallback } from "react";
 import {
@@ -466,7 +467,7 @@ function DiseaseScanner({ token }) {
     const form = new FormData();
     form.append("image", file);
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || (typeof window !== "undefined" ? `http://${window.location.hostname}:5001/api` : "http://localhost:5001/api")}/disease/predict`, {
+      const res = await fetch(`${API_URL}/disease/predict`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body: form,
@@ -1094,7 +1095,7 @@ function AiMitraPage() {
     if (!token) return;
     setLoadingSessions(true);
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || (typeof window !== "undefined" ? `http://${window.location.hostname}:5001/api` : "http://localhost:5001/api")}/chat/sessions`, {
+      const res = await fetch(`${API_URL}/chat/sessions`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
@@ -1127,7 +1128,7 @@ function AiMitraPage() {
   const handleDeleteSession = async (sid) => {
     if (!token || !sid) return;
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || (typeof window !== "undefined" ? `http://${window.location.hostname}:5001/api` : "http://localhost:5001/api")}/chat/${encodeURIComponent(sid)}`, {
+      const res = await fetch(`${API_URL}/chat/${encodeURIComponent(sid)}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -1206,7 +1207,7 @@ function AiMitraPage() {
     if (!token || !sid) return;
     if (handoffActiveRef.current || isStreamingRef.current) return;
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || (typeof window !== "undefined" ? `http://${window.location.hostname}:5001/api` : "http://localhost:5001/api")}/chat/${encodeURIComponent(sid)}`, {
+      const res = await fetch(`${API_URL}/chat/${encodeURIComponent(sid)}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) return;
@@ -1295,7 +1296,7 @@ function AiMitraPage() {
     let fullText = "";
 
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || (typeof window !== "undefined" ? `http://${window.location.hostname}:5001/api` : "http://localhost:5001/api")}/chat`, {
+      const res = await fetch(`${API_URL}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
@@ -1548,7 +1549,7 @@ function AiMitraPage() {
       // and there is no active handoff or task running
       if (token && messages.length === 0 && !loading && !handoffActiveRef.current && !isStreamingRef.current && !contextualTask) {
         try {
-          const res = await fetch(`${import.meta.env.VITE_API_URL || (typeof window !== "undefined" ? `http://${window.location.hostname}:5001/api` : "http://localhost:5001/api")}/chat/sessions`, {
+          const res = await fetch(`${API_URL}/chat/sessions`, {
             headers: { Authorization: `Bearer ${token}` }
           });
           if (res.ok) {

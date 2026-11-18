@@ -32,6 +32,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from . import ml_loader
+from .throttles import AIRateThrottle
 from .utils import CROPS, WATER_COMPAT, get_crop_meta, check_image_quality, extract_section
 from .serializers import (
     RetrieveRequestSerializer,
@@ -86,6 +87,7 @@ class SoilRecommendView(APIView):
     scorer if the model isn't loaded).
     """
     parser_classes = [JSONParser]
+    throttle_classes = [AIRateThrottle]
 
     def post(self, request):
         serializer = SoilRecommendRequestSerializer(data=request.data)
@@ -101,6 +103,14 @@ class SoilRecommendView(APIView):
         area_acres = d["areaAcres"]
         water_avail = d["waterAvailability"].lower()
 
+        # The farm may have no soil test. Never invent one: the model averages
+        # over typical soils instead (see services/soil_inputs.py), and the
+        # response says which basis was used.
+        from krishi_core.services.soil_inputs import soil_scenarios
+        soil_rows, soil_basis, soil_classes = soil_scenarios(nitrogen, phosphorus, potassium, ph)
+        # Rule-based parts (heuristic fallback, pH match bar) need one pH value.
+        ph_rule = ph if ph is not None else 6.8
+
         collection = ml_loader.state.get("collection")
 
         # Canonical path: the trained crop-recommendation model. Used ONLY when
@@ -112,12 +122,18 @@ class SoilRecommendView(APIView):
         results = self._model_recommend(
             request, ph, nitrogen, phosphorus, potassium,
             org_carbon, season_in, area_acres, collection,
+            soil_rows=soil_rows,
         )
         used_model = bool(results)
 
         if not results:
             # Rule-based heuristic fallback (best true match on soil/water data).
-            results = self._heuristic_fallback(ph, org_carbon, season_in, area_acres, water_avail, collection)
+            results = self._heuristic_fallback(ph_rule, org_carbon, season_in, area_acres, water_avail, collection,
+                                               ph_known=ph is not None)
+        if ph is None:
+            # No soil test: don't show a made-up soil-match score.
+            for r in results:
+                r["soilMatchPct"] = None
 
         # Sort primarily by suitabilityScore (best match)
         results.sort(key=lambda x: x["suitabilityScore"], reverse=True)
@@ -160,23 +176,35 @@ class SoilRecommendView(APIView):
                     "Fertilizer_Used_Last_Season": d.get("fertilizerUsedLastSeason", "Urea"),
                     "Yield_Last_Season": 2.5,
                 }
+                ml_data = {k: v for k, v in ml_data.items() if v is not None}
                 r["suggestedFertilizer"] = fertilizer_service.predict(ml_data)
                 r["irrigationPrediction"] = irrigation_service.predict(ml_data)
             
+        if soil_basis == "assumed":
+            soil_desc = "No soil test was provided, so this ranking is based on your local climate, season and region."
+        else:
+            parts = []
+            if ph is not None:
+                parts.append(f"pH {ph}")
+            for label, key, val in (("Nitrogen", "N", nitrogen), ("Phosphorus", "P", phosphorus), ("Potassium", "K", potassium)):
+                if val is not None:
+                    parts.append(f"{label} {val:g} kg/ha ({soil_classes[key]})")
+            soil_desc = "Soil test: " + ", ".join(parts) + "."
+
         llm_summary = ""
         try:
             from krishi_core.services.ai_engine.llm_service import llm_service
             prompt = f"""
 You are an agricultural expert. A farmer is asking for crop recommendations for their land.
-Their soil data is: pH {ph}, Nitrogen {nitrogen}, Phosphorus {phosphorus}, Potassium {potassium}, EC {d.get('ec', 0)}, Organic Carbon {org_carbon}.
+{soil_desc}{"" if soil_basis == "assumed" else f" EC {d.get('ec', 0)}, Organic Carbon {org_carbon}."}
 The top crops recommended by our engine are:
 {', '.join([r['cropName'] for r in results])}
 
-Write a short, engaging 2-paragraph summary directly to the farmer. Explain why the top pick ({results[0]['cropName']}) is the best choice based on their soil, and briefly mention the alternatives.
+Write a short, engaging 2-paragraph summary directly to the farmer. Explain why the top pick ({results[0]['cropName']}) is the best choice based on their soil and local climate, and briefly mention the alternatives.{" Also encourage them to add their Soil Health Card values for a more precise recommendation." if soil_basis != "soil_test" else ""}
 Keep it conversational, encouraging, and formatted in plain text (no markdown formatting needed).
 """
             # Strict short timeout (1.0s connect, 2.5s read) to ensure fast endpoint response
-            llm_summary_resp = llm_service.generate_response(prompt, force_json=False, timeout=(1.0, 2.5))
+            llm_summary_resp = llm_service.generate_response(prompt, force_json=False, timeout=(3.0, 8.0))
             if isinstance(llm_summary_resp, dict) and 'error' not in llm_summary_resp:
                 llm_summary = llm_summary_resp.get('answer', llm_summary_resp.get('text', str(llm_summary_resp)))
             elif isinstance(llm_summary_resp, str) and llm_summary_resp.strip() and "AI service is currently unavailable" not in llm_summary_resp:
@@ -190,21 +218,26 @@ Keep it conversational, encouraging, and formatted in plain text (no markdown fo
             top_score = results[0].get("suitabilityScore", 85)
             alt_crops = ", ".join([r["cropName"] for r in results[1:4]]) if len(results) > 1 else "other seasonal crops"
             llm_summary = (
-                f"Based on your soil analysis (pH {ph}, Nitrogen {nitrogen} kg/ha, Phosphorus {phosphorus} kg/ha, Potassium {potassium} kg/ha), "
-                f"{top_crop} is your optimal crop recommendation with an estimated suitability score of {top_score}%. "
-                f"Your soil's nutrient balance and moisture profile provide favorable growing conditions for {top_crop}. "
+                f"{soil_desc} {top_crop} is your best match this season with an estimated suitability score of {top_score}%. "
                 f"Viable alternatives for this season include {alt_crops}."
             )
+            if soil_basis != "soil_test":
+                llm_summary += " Add your Soil Health Card values to your farm for a soil-specific recommendation."
 
         return Response({
             "recommendations": results,
             "llm_summary": llm_summary,
             "engine": "model" if used_model else "heuristic",  # additive, non-breaking
+            "soilBasis": soil_basis,      # "soil_test" | "partial" | "assumed"
+            "soilClasses": soil_classes,  # {"N": "Low"|"Medium"|"High"|None, ...}
         })
 
     @staticmethod
     def _rag_reason(collection, crop_name, ph):
-        reason = f"{crop_name} suits your soil's pH {ph} and current nutrient profile."
+        if ph is None:
+            reason = f"{crop_name} suits your local climate and season."
+        else:
+            reason = f"{crop_name} suits your soil's pH {ph} and current nutrient profile."
         if collection:
             try:
                 query = f"{crop_name} soil requirements pH nitrogen phosphorus recommendation"
@@ -218,7 +251,7 @@ Keep it conversational, encouraging, and formatted in plain text (no markdown fo
                 pass
         return reason
 
-    def _heuristic_fallback(self, ph, org_carbon, season_in, area_acres, water_avail, collection):
+    def _heuristic_fallback(self, ph, org_carbon, season_in, area_acres, water_avail, collection, ph_known=True):
         results = []
         for crop in CROPS:
             ph_lo, ph_hi = crop["phRange"]
@@ -246,13 +279,13 @@ Keep it conversational, encouraging, and formatted in plain text (no markdown fo
                 "soilMatchPct": soil_match, "weatherMatchPct": weather_pct,
                 "expectedYieldKg": yield_kg, "expectedMarginRs": margin,
                 "durationDays": crop["durationDays"],
-                "reason": self._rag_reason(collection, crop["name"], ph),
+                "reason": self._rag_reason(collection, crop["name"], ph if ph_known else None),
                 "isTopPick": False,
             })
         return results
 
     def _model_recommend(self, request, ph, nitrogen, phosphorus, potassium,
-                         org_carbon, season_in, area_acres, collection):
+                         org_carbon, season_in, area_acres, collection, soil_rows=None):
         """Rank crops with the trained model when — and only when — it is
         loaded AND all nine real features are available.
 
@@ -271,7 +304,24 @@ Keep it conversational, encouraging, and formatted in plain text (no markdown fo
             lon = float(request.data.get("longitude"))
         except (TypeError, ValueError):
             lat = lon = None
-        state_token = normalize_state_token(request.data.get("state"))
+        raw_state = request.data.get("state")
+
+        # Farms saved with only a typed address (no coordinates) used to skip
+        # the model entirely. Resolve the farm's real address server-side so
+        # the trained model runs for every farm. Falls back to the state name
+        # (state-level regional centre) only if the address can't be resolved.
+        if lat is None or lon is None:
+            from krishi_core.services.geocoding import geocode_lookup
+            for query in (request.data.get("address"), raw_state):
+                if not query:
+                    continue
+                geo = geocode_lookup(str(query), limit=1)
+                if geo and geo.get("lat") is not None and geo.get("lon") is not None:
+                    lat, lon = float(geo["lat"]), float(geo["lon"])
+                    raw_state = raw_state or geo.get("state")
+                    break
+
+        state_token = normalize_state_token(raw_state)
         season_token = canonical_season(season_in)
 
         temperature = humidity = rainfall = None
@@ -291,13 +341,13 @@ Keep it conversational, encouraging, and formatted in plain text (no markdown fo
                 if temperature is None:            # fallback: current temp if climatology missing
                     temperature = cur.get("temperature")
 
-        # Every one of the nine features must be genuinely present.
-        have_all_9 = (
-            None not in (nitrogen, phosphorus, potassium, ph,
-                         temperature, humidity, rainfall)
+        # Climate, season and state must be genuinely present. Soil may be
+        # unknown: that is handled by averaging over soil_rows, never invented.
+        have_context = (
+            None not in (temperature, humidity, rainfall)
             and bool(season_token) and bool(state_token)
         )
-        if not have_all_9:
+        if not have_context:
             logger.info(
                 "Crop model skipped (real inputs incomplete): "
                 "lat=%s lon=%s temp=%s humid=%s rain=%s season=%s state=%s",
@@ -305,11 +355,13 @@ Keep it conversational, encouraging, and formatted in plain text (no markdown fo
             )
             return None
 
-        ranked = crop_recommendation_service.recommend({
-            "N": nitrogen, "P": phosphorus, "K": potassium,
-            "temperature_C": temperature, "humidity_pct": humidity, "ph": ph,
+        if soil_rows is None:
+            from krishi_core.services.soil_inputs import soil_scenarios
+            soil_rows, _, _ = soil_scenarios(nitrogen, phosphorus, potassium, ph)
+        ranked = crop_recommendation_service.recommend_over_soil({
+            "temperature_C": temperature, "humidity_pct": humidity,
             "rainfall_mm": rainfall, "season": season_token, "state": state_token,
-        }, top_n=5)
+        }, soil_rows, top_n=5)
         if not ranked:
             return None
 
@@ -323,8 +375,11 @@ Keep it conversational, encouraging, and formatted in plain text (no markdown fo
             # Real soil-pH match (same formula as the heuristic) so the UI's
             # soil bar reflects the farm, not just model confidence.
             ph_lo, ph_hi = meta["phRange"]
-            soil_match = 100 if ph_lo <= ph <= ph_hi else max(0, 100 - abs(ph - (ph_lo + ph_hi) / 2) * 20)
-            soil_match = round(min(100, soil_match * (1 + (org_carbon - 0.5) * 0.3)))
+            if ph is None:
+                soil_match = None        # no soil test: no made-up soil score
+            else:
+                soil_match = 100 if ph_lo <= ph <= ph_hi else max(0, 100 - abs(ph - (ph_lo + ph_hi) / 2) * 20)
+                soil_match = round(min(100, soil_match * (1 + (org_carbon - 0.5) * 0.3)))
 
             yield_kg = round(meta["yieldKgPerAcre"] * area_acres)
             cost = round(meta["costPerAcre"] * area_acres)
@@ -450,6 +505,7 @@ class PredictDiseaseView(APIView):
     Supports clear leaves, healthy foliage, uncertain/low-quality images, and non-plant rejection.
     """
     parser_classes = [MultiPartParser, FormParser]
+    throttle_classes = [AIRateThrottle]
 
     def post(self, request):
         gemini_key = getattr(settings, "GEMINI_API_KEY", "")
@@ -565,17 +621,20 @@ class PredictDiseaseView(APIView):
 
             res = None
             gemini_model = configured_model
+            # API key goes in a header, never the URL (URLs end up in error
+            # messages and logs, which would leak the key).
+            gemini_headers = {"Content-Type": "application/json", "x-goog-api-key": gemini_key}
             for candidate_model in model_candidates:
                 gemini_model = candidate_model
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{candidate_model}:generateContent?key={gemini_key}"
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{candidate_model}:generateContent"
                 try:
-                    candidate_res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=(5.0, 45.0))
+                    candidate_res = requests.post(url, json=payload, headers=gemini_headers, timeout=(5.0, 45.0))
                     if candidate_res.status_code == 200:
                         res = candidate_res
                         break
                     if candidate_res.status_code in (429, 503):
                         time.sleep(0.5)
-                        candidate_res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=(5.0, 45.0))
+                        candidate_res = requests.post(url, json=payload, headers=gemini_headers, timeout=(5.0, 45.0))
                         if candidate_res.status_code == 200:
                             res = candidate_res
                             break
@@ -810,6 +869,7 @@ class DecisionEngineView(APIView):
     Expects { "user_query": "...", "ml_predictions": {...}, "weather": {...}, "history": {...} }
     """
     parser_classes = [JSONParser]
+    throttle_classes = [AIRateThrottle]
     
     def post(self, request):
         from krishi_core.services.ai_engine.decision_engine import decision_engine

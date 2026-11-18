@@ -19,12 +19,12 @@ TARGET_DIR = BASE_DIR / "krishi_core" / "ml_models" / "artifacts"
 
 MODELS = {
     "best_model.joblib": {
-        "url": "https://github.com/bjgithub29/KrishiMitra/releases/download/v1.0.0/best_model.joblib",
+        "url": "https://github.com/bhavyajain-dev/KrishiMitra/releases/download/v1.0.0/best_model.joblib",
         "md5": "ffd5def7a346704d44790a3b6067cf19",
         "description": "Random Forest Crop Recommendation pipeline (25 classes)"
     },
     "crop_yield_model.pkl": {
-        "url": "https://github.com/bjgithub29/KrishiMitra/releases/download/v1.0.0/crop_yield_model.pkl",
+        "url": "https://github.com/bhavyajain-dev/KrishiMitra/releases/download/v1.0.0/crop_yield_model.pkl",
         "md5": "7c47105d8f39cfd87acc73f3ea9b3edc",
         "description": "HistGradientBoosting Crop Yield Regressor"
     }

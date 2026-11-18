@@ -1,91 +1,40 @@
 import json
 import logging
-import requests
 import re
-from django.conf import settings
+
+from .gemini_client import gemini_generate
 
 logger = logging.getLogger(__name__)
 
+
+def _parse_json(text: str):
+    cleaned = re.sub(r'^```(?:json)?\n', '', text.strip(), flags=re.IGNORECASE)
+    cleaned = re.sub(r'\n```$', '', cleaned.strip())
+    return json.loads(cleaned)
+
+
 class LLMService:
+    """Text generation via Google Gemini (the app's only LLM provider)."""
+
     def generate_response(self, prompt: str, force_json: bool = True, timeout: tuple = None) -> dict | str:
-        ollama_url = f"{settings.OLLAMA_BASE_URL}/api/generate"
-        ollama_model = getattr(settings, 'OLLAMA_MODEL', 'llama3.2:1b')
-        
-        payload = {
-            "model": ollama_model,
-            "prompt": prompt,
-            "stream": False,
-            "options": {
-                "temperature": 0.2
-            }
-        }
-        
-        if force_json:
-            payload["format"] = "json"
-        
-        # 1. Try local Ollama
-        ollama_timeout = timeout or (2.0, 30.0)
-        try:
-            logger.info(f"Sending prompt to Ollama ({ollama_model})...")
-            res = requests.post(ollama_url, json=payload, timeout=ollama_timeout)
-            
-            if res.status_code == 200:
-                text_resp = res.json().get("response", "").strip()
-                if not force_json:
-                    return text_resp
-                
-                cleaned_content = re.sub(r'^```(?:json)?\n', '', text_resp.strip(), flags=re.IGNORECASE)
-                cleaned_content = re.sub(r'\n```$', '', cleaned_content.strip())
-                return json.loads(cleaned_content)
-            else:
-                logger.warning("Ollama returned non-200 (%s): %s", res.status_code, res.text)
-        except Exception as e:
-            logger.info("Local Ollama unavailable (%s), trying Gemini fallback...", e)
-
-        # 2. Try Gemini Cloud Fallback
-        gemini_key = getattr(settings, "GEMINI_API_KEY", "")
-        if gemini_key:
+        text, model = gemini_generate(
+            prompt,
+            json_mode=force_json,
+            temperature=0.2,
+            timeout=timeout or (5.0, 60.0),
+        )
+        if text:
+            if not force_json:
+                return text
             try:
-                import time
-                configured_model = getattr(settings, "GEMINI_MODEL", "gemini-flash-lite-latest")
-                model_candidates = [configured_model]
-                for candidate in ["gemini-flash-lite-latest", "gemini-flash-latest", "gemini-pro-latest"]:
-                    if candidate not in model_candidates:
-                        model_candidates.append(candidate)
+                return _parse_json(text)
+            except (ValueError, TypeError):
+                logger.warning("Gemini (%s) returned non-JSON output for a JSON request", model)
 
-                gemini_timeout = timeout or (5.0, 60.0)
-                res = None
-                for candidate_model in model_candidates:
-                    gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/{candidate_model}:generateContent?key={gemini_key}"
-                    gemini_payload = {
-                        "contents": [{"parts": [{"text": prompt}]}]
-                    }
-                    try:
-                        res = requests.post(gemini_url, json=gemini_payload, headers={"Content-Type": "application/json"}, timeout=gemini_timeout)
-                        if res.status_code == 200:
-                            break
-                        if res.status_code == 503:
-                            time.sleep(0.5)
-                            res = requests.post(gemini_url, json=gemini_payload, headers={"Content-Type": "application/json"}, timeout=gemini_timeout)
-                            if res.status_code == 200:
-                                break
-                    except Exception:
-                        continue
-                if res and res.status_code == 200:
-                    candidates = res.json().get("candidates", [])
-                    if candidates:
-                        text_resp = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
-                        if not force_json:
-                            return text_resp
-                        cleaned_content = re.sub(r'^```(?:json)?\n', '', text_resp.strip(), flags=re.IGNORECASE)
-                        cleaned_content = re.sub(r'\n```$', '', cleaned_content.strip())
-                        return json.loads(cleaned_content)
-            except Exception as e:
-                logger.info("Gemini fallback failed (%s)", e)
-
-        # 3. Graceful fallback when no provider is available
+        # Graceful fallback when Gemini is unavailable, rate-limited or unconfigured
         if force_json:
             return {"error": "AI service unavailable", "fallback": True}
-        return "AI service is currently unavailable (offline, rate-limited, or unconfigured). Please configure Ollama or GEMINI_API_KEY."
+        return "AI service is currently unavailable (offline, rate-limited, or unconfigured). Please configure GEMINI_API_KEY."
+
 
 llm_service = LLMService()

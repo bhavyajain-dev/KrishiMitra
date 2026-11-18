@@ -1,0 +1,69 @@
+# Render Blueprint for the KrishiMitra backend (Django API).
+#
+# Use it either by creating a new Blueprint from this repo in the Render
+# dashboard, or as a reference for an existing service: copy the build/start
+# commands and env var names into Settings / Environment.
+#
+# Both services already exist as manually created Render services, so this
+# file is the written-down configuration. Applying it as a *new* Blueprint
+# would create duplicates.
+services:
+  - type: web
+    name: krishimitra-backend
+    runtime: python
+    plan: free
+    # Closest Render region to India. Put the Neon database in AWS
+    # Singapore (ap-southeast-1) too, so every query stays in-region.
+    region: singapore
+    rootDir: backend
+    buildCommand: ./render-build.sh
+    # One worker: the loaded ML models + ChromaDB use ~410 MB, and the free
+    # instance has 512 MB. Threads give concurrency (e.g. streaming chat)
+    # without a second copy of the models. 120 s covers slow Gemini replies.
+    startCommand: gunicorn krishimitra_ml.wsgi:application --workers 1 --threads 4 --timeout 120 --bind 0.0.0.0:$PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: DJANGO_DEBUG
+        value: "0"
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      # Values below must be filled in the dashboard (never commit them).
+      - key: DATABASE_URL          # Neon connection string (sslmode=require)
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS  # your frontend URL(s), comma-separated
+        sync: false
+      - key: BREVO_API_KEY         # Render free blocks SMTP; Brevo sends over HTTPS
+        sync: false
+      - key: BREVO_SENDER_EMAIL    # a sender verified in Brevo
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: DATAGOV_API_KEY       # real mandi prices
+        sync: false
+
+  # Frontend: React + Vite + TanStack Start, served as a free Static Site.
+  # `npm run build` also renders an HTML shell for every app route
+  # (frontend/scripts/generate-static-shell.js), so deep links work.
+  - type: web
+    name: krishimitra-frontend
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: .output/public
+    routes:
+      # Any path without a real file falls back to the app shell.
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # Baked into the JS bundle at build time; must point at the backend.
+      - key: VITE_API_URL
+        value: https://krishimitra-backend-2q5m.onrender.com/api
+      - key: VITE_GOOGLE_CLIENT_ID   # same value as backend GOOGLE_CLIENT_ID
+        sync: false

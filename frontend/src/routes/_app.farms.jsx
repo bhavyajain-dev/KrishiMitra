@@ -1,3 +1,4 @@
+import { API_URL } from "@/lib/api";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Sparkles, MapPin, Ruler, Droplets, Satellite, Plus, AlertCircle, Crosshair, Sprout, Loader2, CheckCircle2 } from "lucide-react";
 import { useState } from "react";
@@ -72,7 +73,6 @@ function FarmsPage() {
   
   const navigate = useNavigate();
 
-  const API_URL = import.meta.env.VITE_API_URL || (typeof window !== "undefined" ? `http://${window.location.hostname}:5001/api` : "http://localhost:5001/api");
 
   const handleGetCurrentLocation = () => {
     if (!navigator.geolocation) {
@@ -365,6 +365,7 @@ function FarmsPage() {
         latitude:  analyzingFarm?.location?.lat ?? null,
         longitude: analyzingFarm?.location?.lon ?? null,
         state:     analyzingFarm?.location?.state || null,
+        address:   analyzingFarm?.location?.address || null,
       };
 
       const res = await fetch(`${API_URL}/soil_recommend`, {
