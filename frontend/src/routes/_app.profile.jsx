@@ -1,3 +1,4 @@
+import { API_URL } from "@/lib/api";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { Leaf, MapPin, Pencil, Save, Scale, Wind, Lock, LogOut, ShieldCheck, User, KeyRound, Eye, EyeOff } from "lucide-react";
@@ -74,7 +75,6 @@ function ProfileSettingsPage() {
   const [isResettingWithOtp, setIsResettingWithOtp] = useState(false);
   const [otpCooldown, setOtpCooldown] = useState(0);
 
-  const API_URL = import.meta.env.VITE_API_URL || (typeof window !== "undefined" ? `http://${window.location.hostname}:5001/api` : "http://localhost:5001/api");
 
   useEffect(() => {
     if (otpCooldown <= 0) return;
@@ -92,7 +92,7 @@ function ProfileSettingsPage() {
     e.preventDefault();
     setIsSavingProfile(true);
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || (typeof window !== "undefined" ? `http://${window.location.hostname}:5001/api` : "http://localhost:5001/api")}/auth/profile`, {
+      const res = await fetch(`${API_URL}/auth/profile`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -131,7 +131,7 @@ function ProfileSettingsPage() {
     }
     setIsChangingPassword(true);
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || (typeof window !== "undefined" ? `http://${window.location.hostname}:5001/api` : "http://localhost:5001/api")}/auth/change-password`, {
+      const res = await fetch(`${API_URL}/auth/change-password`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

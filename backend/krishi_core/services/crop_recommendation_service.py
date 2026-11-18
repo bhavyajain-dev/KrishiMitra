@@ -178,6 +178,25 @@ class CropRecommendationService:
         # Estimator without probabilities: return the single predicted label.
         return [{"crop": str(self.model.predict(X)[0]), "confidence": None}]
 
+    def recommend_over_soil(self, base, soil_rows, top_n=5):
+        """Rank crops, averaging the model's probabilities over soil rows.
+
+        ``base`` holds the real non-soil features (temperature_C, humidity_pct,
+        rainfall_mm, season, state). ``soil_rows`` comes from
+        ``soil_inputs.soil_scenarios``: a single row for a full soil test, or a
+        grid over unknown values (so missing soil data is never invented).
+        """
+        if not self.is_available() or not soil_rows:
+            return None
+        if not hasattr(self.model, "predict_proba"):
+            return self.recommend({**base, **soil_rows[0]}, top_n=top_n)
+
+        rows = [{k: {**base, **s}[k] for k in FEATURES} for s in soil_rows]
+        X = pd.DataFrame(rows, columns=FEATURES)
+        proba = self.model.predict_proba(X).mean(axis=0)
+        ranked = sorted(zip(self.model.classes_, proba), key=lambda t: t[1], reverse=True)
+        return [{"crop": str(c), "confidence": round(float(p), 4)} for c, p in ranked[:top_n]]
+
 
 # Module-level singleton (mirrors yield_service / fertilizer_service / irrigation_service).
 crop_recommendation_service = CropRecommendationService()

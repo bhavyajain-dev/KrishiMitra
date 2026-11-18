@@ -90,10 +90,12 @@ class RetrieveRequestSerializer(serializers.Serializer):
 
 
 class SoilRecommendRequestSerializer(serializers.Serializer):
-    ph = serializers.FloatField(required=True, min_value=0.0, max_value=14.0)
-    nitrogen = serializers.FloatField(required=True, min_value=0.0)
-    phosphorus = serializers.FloatField(required=True, min_value=0.0)
-    potassium = serializers.FloatField(required=True, min_value=0.0)
+    # Soil test values (Soil Health Card, kg/ha). Optional: when missing, the
+    # crop model averages over typical soils instead of using invented numbers.
+    ph = serializers.FloatField(required=False, allow_null=True, default=None, min_value=0.0, max_value=14.0)
+    nitrogen = serializers.FloatField(required=False, allow_null=True, default=None, min_value=0.0)
+    phosphorus = serializers.FloatField(required=False, allow_null=True, default=None, min_value=0.0)
+    potassium = serializers.FloatField(required=False, allow_null=True, default=None, min_value=0.0)
     organicCarbon = serializers.FloatField(required=False, default=0.5)
     ec = serializers.FloatField(required=False, default=0.4)
     season = serializers.CharField(required=False, default="kharif")

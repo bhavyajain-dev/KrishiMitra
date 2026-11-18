@@ -1,3 +1,4 @@
+import { API_URL } from "@/lib/api";
 import { useState, useEffect, useRef } from "react";
 import { Search, MapPin, Loader2 } from "lucide-react";
 
@@ -30,7 +31,7 @@ export function LocationSearch({ value, onChange, placeholder = "Search location
       }
       setIsLoading(true);
       try {
-        const API_URL = import.meta.env.VITE_API_URL || (typeof window !== "undefined" ? `http://${window.location.hostname}:5001/api` : "http://localhost:5001/api");
+        
         const res = await fetch(`${API_URL}/geocode?q=${encodeURIComponent(query)}&limit=5`);
         if (res.ok) {
           const data = await res.json();

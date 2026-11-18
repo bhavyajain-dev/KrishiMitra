@@ -1,3 +1,4 @@
+import { API_URL } from "@/lib/api";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { useAppData } from "@/lib/AppDataContext";
@@ -59,7 +60,7 @@ function MarketPage() {
       // Fallback geocode only if userLocation isn't set yet
       (async () => {
         try {
-          const API_URL = import.meta.env.VITE_API_URL || (typeof window !== "undefined" ? `http://${window.location.hostname}:5001/api` : "http://localhost:5001/api");
+          
           const geoRes = await fetch(`${API_URL}/geocode?q=${encodeURIComponent(activeFarm.location.address)}&limit=1`);
           if (geoRes.ok) {
             const geoData = await geoRes.json();
@@ -82,7 +83,7 @@ function MarketPage() {
   useEffect(() => {
     async function fetchBaseline() {
       try {
-        const res = await fetch(`${import.meta.env.VITE_API_URL || (typeof window !== "undefined" ? `http://${window.location.hostname}:5001/api` : "http://localhost:5001/api")}/market/locations`, {
+        const res = await fetch(`${API_URL}/market/locations`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         if (res.ok) {
@@ -104,7 +105,7 @@ function MarketPage() {
         if (stateFilter) params.append("state", stateFilter);
         if (districtFilter) params.append("district", districtFilter);
 
-        const res = await fetch(`${import.meta.env.VITE_API_URL || (typeof window !== "undefined" ? `http://${window.location.hostname}:5001/api` : "http://localhost:5001/api")}/market/locations?${params.toString()}`, {
+        const res = await fetch(`${API_URL}/market/locations?${params.toString()}`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         if (res.ok) {
@@ -127,7 +128,7 @@ function MarketPage() {
       if (districtFilter) params.append("district", districtFilter);
       if (commoditySearch) params.append("commodity", commoditySearch);
 
-      const res = await fetch(`${import.meta.env.VITE_API_URL || (typeof window !== "undefined" ? `http://${window.location.hostname}:5001/api` : "http://localhost:5001/api")}/market/prices?${params.toString()}`, {
+      const res = await fetch(`${API_URL}/market/prices?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
@@ -155,7 +156,7 @@ function MarketPage() {
       if (districtFilter) params.append("district", districtFilter);
       if (marketFilter) params.append("market", marketFilter); // If user filtered to specific yard
 
-      const res = await fetch(`${import.meta.env.VITE_API_URL || (typeof window !== "undefined" ? `http://${window.location.hostname}:5001/api` : "http://localhost:5001/api")}/market/history?${params.toString()}`, {
+      const res = await fetch(`${API_URL}/market/history?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {

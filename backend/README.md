@@ -40,7 +40,6 @@ cp .env.example .env    # Windows cmd: copy .env.example .env
 | `GEMINI_API_KEY` | Leaf Pathology Vision (`/api/disease/predict`) & Cloud Gemini LLM | Returns unconfigured error on disease predict; AI Mitra uses local ChromaDB. |
 | `EMAIL_HOST_USER` / `PASSWORD` | Password reset OTP delivery via Gmail SMTP | OTPs are printed to server terminal output. |
 | `DATAGOV_API_KEY` | Real-time APMC Mandi commodity price synchronization | Serves 3,937 pre-seeded commodity prices from SQLite. |
-| `OLLAMA_BASE_URL` / `MODEL` | Local Ollama LLM chat streaming (`llama3.2:1b`) | Cascades automatically to Gemini or ChromaDB if offline. |
 
 ## Endpoints
 
@@ -119,9 +118,9 @@ python knowledge-base/scripts/init_website_chroma.py    # -> website_kb (5 items
 
 ## AI Providers & Hybrid Fallback
 
-- **AI Mitra Chat (`/api/chat`):** Implements a resilient 4-tier hybrid streaming architecture:
-  1. **Tier 1 (Primary):** Local Ollama (`settings.OLLAMA_MODEL`, default `llama3.2:1b`, 1.5s fast connect timeout).
-  2. **Tier 2 (Cloud):** Google Gemini REST API (`GEMINI_MODEL`, default `gemini-flash-latest`, requires `GEMINI_API_KEY`).
+- **AI Mitra Chat (`/api/chat`):** Gemini-first with offline fallbacks:
+  1. **Tier 1 (Primary):** Google Gemini REST API (`GEMINI_MODEL`, default `gemini-flash-lite-latest`, requires `GEMINI_API_KEY`).
+  2. **Tier 2 (Offline):** Contextual agronomic advisory engine.
   3. **Tier 3 (Offline Knowledge):** Direct ChromaDB verified knowledge base response with verified attribution.
   4. **Tier 4 (Guidance):** Clean insufficient information notice if no matching records exist.
 - **Disease Pathology Scanner (`/api/disease/predict`):** Google Gemini Vision API (`gemini-flash-latest`, requires `GEMINI_API_KEY`).

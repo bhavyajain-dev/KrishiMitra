@@ -1,3 +1,4 @@
+import { API_URL } from "@/lib/api";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect, useRef } from "react";
 import { Search, MapPin, Wind, Droplets, Eye, Gauge, Thermometer, Sun, CloudRain, Cloud, CloudSun, Navigation, Plus, X, Sparkles, Clock, Calendar, AlertCircle, RefreshCw, Loader2 } from "lucide-react";
@@ -100,7 +101,7 @@ async function fetchWeatherForLocation(locationQuery, inputLat, inputLon) {
   let lon = inputLon;
   let cityName = locationQuery;
 
-  const baseUrl = import.meta.env.VITE_API_URL || (typeof window !== "undefined" ? `http://${window.location.hostname}:5001/api` : "http://localhost:5001/api");
+  const baseUrl = API_URL;
 
   let isApproximate = false;
   let matchLevel = "exact";
@@ -265,8 +266,6 @@ function WeatherPage() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const API_URL = import.meta.env.VITE_API_URL ||
-    (typeof window !== "undefined" ? `http://${window.location.hostname}:5001/api` : "http://localhost:5001/api");
 
   /** Convert a location query to a stable cache key (mirrors backend logic) */
   const toLocationKey = (q) =>

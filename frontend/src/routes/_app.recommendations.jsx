@@ -1,3 +1,4 @@
+import { API_URL } from "@/lib/api";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   CloudSun, Crown, FlaskConical, Sparkles, Droplets,
@@ -9,7 +10,28 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { toast } from "sonner";
 import { subscribeAiSyncRefresh } from "@/lib/aiSyncEvents";
 
-const API_URL = import.meta.env.VITE_API_URL || (typeof window !== "undefined" ? `http://${window.location.hostname}:5001/api` : "http://localhost:5001/api");
+// The backend's fertilizer/irrigation fields come back as EITHER a plain string
+// (error / "N/A ..." cases) OR a structured object (ML model or knowledge-base
+// result). Normalize both to a display label so the UI never calls string
+// methods on an object.
+function recoLabel(value, key) {
+  if (value == null) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "object") return value[key] || value.note || "";
+  return String(value);
+}
+
+// Soil test value from the farm, or null when the farmer hasn't entered one.
+// (Never substitute a made-up default: the backend handles missing soil data.)
+function soilValue(v) {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function recoUnavailable(label) {
+  return !label || label.includes("unavailable") || label.startsWith("N/A");
+}
 
 export const Route = createFileRoute("/_app/recommendations")({
   head: () => ({
@@ -66,7 +88,7 @@ function SoilInput({ label, id, value, placeholder, hint }) {
 function ScoreBar({ value, color = "bg-primary" }) {
   return (
     <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
-      <div className={`h-full rounded-full transition-all duration-700 ${color}`} style={{ width: `${value}%` }} />
+      <div className={`h-full rounded-full transition-all duration-700 ${color}`} style={{ width: `${value ?? 0}%` }} />
     </div>
   );
 }
@@ -124,16 +146,24 @@ export function RecommendationsView() {
     const season = (month >= 5 && month <= 9) ? "kharif" : "rabi";
 
     const payload = {
-      ph: Number(activeFarm?.ph) || 6.8,
-      nitrogen: Number(activeFarm?.nitrogen) || 140,
-      phosphorus: Number(activeFarm?.phosphorus) || 35,
-      potassium: Number(activeFarm?.potassium) || 180,
+      // Real Soil Health Card values (kg/ha) or null. No invented defaults:
+      // without a soil test the backend averages over typical soils instead.
+      ph: soilValue(activeFarm?.ph),
+      nitrogen: soilValue(activeFarm?.nitrogen),
+      phosphorus: soilValue(activeFarm?.phosphorus),
+      potassium: soilValue(activeFarm?.potassium),
       organicCarbon: Number(activeFarm?.organicCarbon) || 0.6,
       ec: Number(activeFarm?.ec) || 0.35,
       season,
       areaAcres: Number(activeFarm?.areaAcres) || 2.0,
-      waterAvailability: (activeFarm?.waterAvailability || "medium").toLowerCase(),
-      state: activeFarm?.state || "Gujarat",
+      waterAvailability: (activeFarm?.waterLevel || activeFarm?.waterAvailability || "medium").toLowerCase(),
+      // Real farm location: lets the backend run the trained crop model with
+      // season-aligned climate data. If coordinates are missing, the backend
+      // resolves them from the address. Never default to a fixed state.
+      latitude: activeFarm?.location?.lat ?? null,
+      longitude: activeFarm?.location?.lon ?? null,
+      state: activeFarm?.location?.state || null,
+      address: activeFarm?.location?.address || null,
     };
 
     try {
@@ -141,7 +171,9 @@ export function RecommendationsView() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
+          // Logged-out (guest) users have no token: sending "Bearer null"
+          // made the API reject the request with 401.
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify(payload),
       });
@@ -180,6 +212,8 @@ export function RecommendationsView() {
     }
   };
 
+  const farmHasSoilTest = ["ph", "nitrogen", "phosphorus", "potassium"]
+    .every((k) => soilValue(activeFarm?.[k]) !== null);
   const primary = results?.find((r) => r.isTopPick) || results?.[0];
   const others = results?.filter((r) => !r.isTopPick) || [];
 
@@ -212,6 +246,20 @@ export function RecommendationsView() {
       <div className="flex justify-between items-center px-2">
         <h2 className="font-display text-lg font-semibold text-primary">Farm Suitability Analysis</h2>
       </div>
+
+      {activeFarm && !farmHasSoilTest && (
+        <div className="glass flex items-start gap-3 rounded-2xl border border-warning/30 bg-warning/5 p-4 text-xs leading-relaxed">
+          <FlaskConical className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+          <div>
+            <span className="font-semibold text-foreground">No soil test for this farm yet.</span>{" "}
+            <span className="text-muted-foreground">
+              Recommendations use your local climate, season and region only. Add your Soil Health Card values
+              (pH, N, P, K) to get a soil-specific recommendation.
+            </span>{" "}
+            <Link to="/farms" className="font-semibold text-primary hover:underline">Add soil test →</Link>
+          </div>
+        </div>
+      )}
 
       {/* Loading state while generating */}
       {isGenerating && (
@@ -323,12 +371,12 @@ export function RecommendationsView() {
                   <div className="h-10 w-px bg-border/50 hidden sm:block" />
                   <div className="space-y-0.5">
                     <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Expected Yield</div>
-                    <div className="text-lg font-bold">{primary.expectedYieldKg.toLocaleString("en-IN")} kg</div>
+                    <div className="text-lg font-bold">{Number(primary.expectedYieldKg ?? 0).toLocaleString("en-IN")} kg</div>
                     <div className="text-[10px] text-muted-foreground">{activeFarm?.areaAcres || 1} acre(s)</div>
                   </div>
                   <div className="space-y-0.5">
                     <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Est. Profit</div>
-                    <div className="text-lg font-bold text-primary">₹{primary.expectedMarginRs.toLocaleString("en-IN")}</div>
+                    <div className="text-lg font-bold text-primary">₹{Number(primary.expectedMarginRs ?? 0).toLocaleString("en-IN")}</div>
                   </div>
                   <div className="space-y-0.5">
                     <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Duration</div>
@@ -337,26 +385,30 @@ export function RecommendationsView() {
                 </div>
 
                 {/* Machine Learning Insights (Fertilizer and Irrigation) */}
-                {(primary.suggestedFertilizer || primary.irrigationPrediction) && (
-                  <div className="mt-6 flex flex-wrap gap-4 pt-4 border-t border-border/40">
-                    {primary.suggestedFertilizer && (
-                      <div className="rounded-xl border border-border/50 bg-secondary/20 p-3">
-                        <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-1 flex items-center gap-1"><Sprout className="h-3 w-3"/> Suggested Fertilizer</div>
-                        <div className={`text-sm font-semibold ${primary.suggestedFertilizer.includes('unavailable') || primary.suggestedFertilizer.startsWith('N/A') ? 'text-muted-foreground italic' : ''}`}>
-                          {primary.suggestedFertilizer.includes('unavailable') || primary.suggestedFertilizer.startsWith('N/A') ? 'Unavailable' : primary.suggestedFertilizer}
+                {(primary.suggestedFertilizer || primary.irrigationPrediction) && (() => {
+                  const fertilizerLabel = recoLabel(primary.suggestedFertilizer, "recommended_fertilizer");
+                  const irrigationLabel = recoLabel(primary.irrigationPrediction, "irrigation_need");
+                  return (
+                    <div className="mt-6 flex flex-wrap gap-4 pt-4 border-t border-border/40">
+                      {primary.suggestedFertilizer && (
+                        <div className="rounded-xl border border-border/50 bg-secondary/20 p-3">
+                          <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-1 flex items-center gap-1"><Sprout className="h-3 w-3"/> Suggested Fertilizer</div>
+                          <div className={`text-sm font-semibold ${recoUnavailable(fertilizerLabel) ? 'text-muted-foreground italic' : ''}`}>
+                            {recoUnavailable(fertilizerLabel) ? 'Unavailable' : fertilizerLabel}
+                          </div>
                         </div>
-                      </div>
-                    )}
-                    {primary.irrigationPrediction && (
-                      <div className="rounded-xl border border-border/50 bg-secondary/20 p-3">
-                        <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-1 flex items-center gap-1"><Droplets className="h-3 w-3"/> AI Irrigation Pattern</div>
-                        <div className={`text-sm font-semibold ${primary.irrigationPrediction.includes('unavailable') || primary.irrigationPrediction.startsWith('N/A') ? 'text-muted-foreground italic' : ''}`}>
-                          {primary.irrigationPrediction.includes('unavailable') || primary.irrigationPrediction.startsWith('N/A') ? 'Unavailable' : primary.irrigationPrediction}
+                      )}
+                      {primary.irrigationPrediction && (
+                        <div className="rounded-xl border border-border/50 bg-secondary/20 p-3">
+                          <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-1 flex items-center gap-1"><Droplets className="h-3 w-3"/> AI Irrigation Pattern</div>
+                          <div className={`text-sm font-semibold ${recoUnavailable(irrigationLabel) ? 'text-muted-foreground italic' : ''}`}>
+                            {recoUnavailable(irrigationLabel) ? 'Unavailable' : irrigationLabel}
+                          </div>
                         </div>
-                      </div>
-                    )}
-                  </div>
-                )}
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Score bars */}
@@ -366,7 +418,7 @@ export function RecommendationsView() {
                   <div>
                     <div className="mb-1.5 flex items-center justify-between text-xs">
                       <span className="flex items-center gap-1.5 text-muted-foreground"><FlaskConical className="h-3.5 w-3.5" />Soil Match</span>
-                      <span className="font-semibold">{primary.soilMatchPct}%</span>
+                      <span className="font-semibold">{primary.soilMatchPct != null ? `${primary.soilMatchPct}%` : "No soil test"}</span>
                     </div>
                     <ScoreBar value={primary.soilMatchPct} />
                   </div>
@@ -422,7 +474,7 @@ export function RecommendationsView() {
                     <div className="mb-3 space-y-2">
                       <div>
                         <div className="mb-0.5 flex justify-between text-[10px] text-muted-foreground">
-                          <span>Soil</span><span>{crop.soilMatchPct}%</span>
+                          <span>Soil</span><span>{crop.soilMatchPct != null ? `${crop.soilMatchPct}%` : "No soil test"}</span>
                         </div>
                         <ScoreBar value={crop.soilMatchPct} />
                       </div>
@@ -436,30 +488,34 @@ export function RecommendationsView() {
 
                     <p className="mb-3 text-[11px] leading-relaxed text-muted-foreground line-clamp-2">{crop.reason}</p>
 
-                    {(crop.suggestedFertilizer || crop.irrigationPrediction) && (
-                      <div className="mb-3 space-y-2 border-t border-border/50 pt-3">
-                        {crop.suggestedFertilizer && (
-                          <div className="text-[10px] text-muted-foreground flex items-center justify-between">
-                            <span className="flex items-center gap-1 font-semibold"><Sprout className="h-3 w-3"/> Fertilizer</span>
-                            <span className={`font-semibold truncate pl-2 max-w-[120px] text-right ${crop.suggestedFertilizer.includes('unavailable') || crop.suggestedFertilizer.startsWith('N/A') ? 'text-muted-foreground italic' : 'text-foreground'}`} title={crop.suggestedFertilizer}>
-                              {crop.suggestedFertilizer.includes('unavailable') || crop.suggestedFertilizer.startsWith('N/A') ? 'Unavailable' : crop.suggestedFertilizer}
-                            </span>
-                          </div>
-                        )}
-                        {crop.irrigationPrediction && (
-                          <div className="text-[10px] text-muted-foreground flex items-center justify-between">
-                            <span className="flex items-center gap-1 font-semibold"><Droplets className="h-3 w-3"/> Irrigation</span>
-                            <span className={`font-semibold truncate pl-2 max-w-[120px] text-right ${crop.irrigationPrediction.includes('unavailable') || crop.irrigationPrediction.startsWith('N/A') ? 'text-muted-foreground italic' : 'text-foreground'}`} title={crop.irrigationPrediction}>
-                              {crop.irrigationPrediction.includes('unavailable') || crop.irrigationPrediction.startsWith('N/A') ? 'Unavailable' : crop.irrigationPrediction}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    )}
+                    {(crop.suggestedFertilizer || crop.irrigationPrediction) && (() => {
+                      const fertilizerLabel = recoLabel(crop.suggestedFertilizer, "recommended_fertilizer");
+                      const irrigationLabel = recoLabel(crop.irrigationPrediction, "irrigation_need");
+                      return (
+                        <div className="mb-3 space-y-2 border-t border-border/50 pt-3">
+                          {crop.suggestedFertilizer && (
+                            <div className="text-[10px] text-muted-foreground flex items-center justify-between">
+                              <span className="flex items-center gap-1 font-semibold"><Sprout className="h-3 w-3"/> Fertilizer</span>
+                              <span className={`font-semibold truncate pl-2 max-w-[120px] text-right ${recoUnavailable(fertilizerLabel) ? 'text-muted-foreground italic' : 'text-foreground'}`} title={fertilizerLabel}>
+                                {recoUnavailable(fertilizerLabel) ? 'Unavailable' : fertilizerLabel}
+                              </span>
+                            </div>
+                          )}
+                          {crop.irrigationPrediction && (
+                            <div className="text-[10px] text-muted-foreground flex items-center justify-between">
+                              <span className="flex items-center gap-1 font-semibold"><Droplets className="h-3 w-3"/> Irrigation</span>
+                              <span className={`font-semibold truncate pl-2 max-w-[120px] text-right ${recoUnavailable(irrigationLabel) ? 'text-muted-foreground italic' : 'text-foreground'}`} title={irrigationLabel}>
+                                {recoUnavailable(irrigationLabel) ? 'Unavailable' : irrigationLabel}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     <div className="flex items-center justify-between border-t border-border/50 pb-3 pt-3 text-xs font-semibold">
-                      <div>{crop.expectedYieldKg.toLocaleString("en-IN")} kg</div>
-                      <div className="text-primary">₹{crop.expectedMarginRs.toLocaleString("en-IN")}</div>
+                      <div>{Number(crop.expectedYieldKg ?? 0).toLocaleString("en-IN")} kg</div>
+                      <div className="text-primary">₹{Number(crop.expectedMarginRs ?? 0).toLocaleString("en-IN")}</div>
                     </div>
                     
                     <div className="border-t border-border/50 pt-3">

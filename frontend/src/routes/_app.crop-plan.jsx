@@ -1,3 +1,4 @@
+import { API_URL } from "@/lib/api";
 import { createFileRoute } from "@tanstack/react-router";
 import { CalendarRange, CheckCircle2, Flag, Sparkles, Sprout, Droplets, FlaskConical, AlertTriangle, Eye } from "lucide-react";
 import { useState, useEffect, useCallback, useMemo } from "react";
@@ -15,7 +16,6 @@ import { AiFarmAdvisor } from "@/components/crop-plan/AiFarmAdvisor";
 import { setAiHandoff } from "@/lib/aiHandoff";
 
 
-const API_URL = import.meta.env.VITE_API_URL || (typeof window !== "undefined" ? `http://${window.location.hostname}:5001/api` : "http://localhost:5001/api");
 
 const getAgronomicSeasonAdvisory = (cropName, sowingDateStr) => {
   if (!cropName || !sowingDateStr) return null;
@@ -195,7 +195,8 @@ function CropPlanPage() {
         const basePayload = { 
           Crop: activePlan.cropName || "Cotton", 
           Crop_Type: activePlan.cropName || "Cotton",
-          Area: activePlan.areaAcres || 1.0,
+          // Yield model was trained on hectares (1 acre = 0.4047 ha)
+          Area: activePlan.areaAcres ? activePlan.areaAcres * 0.4047 : 1.0,
           Field_Area_hectare: activePlan.areaAcres ? activePlan.areaAcres * 0.404 : 1.0,
           Season: planSeason,
           State: farmState,
@@ -928,7 +929,6 @@ Please analyze this stage of growth and provide actionable advice on:
       {/* Smart Dashboard Layout */}
       {activePlan && (
         <div className="space-y-6 mb-6">
-          
 
 
           <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">

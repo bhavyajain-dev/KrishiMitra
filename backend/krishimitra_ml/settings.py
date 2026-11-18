@@ -124,6 +124,16 @@ REST_FRAMEWORK = {
         "rest_framework.parsers.MultiPartParser",
         "rest_framework.parsers.FormParser",
     ],
+    # Applied per-view (krishi_core.throttles.AIRateThrottle) to the endpoints
+    # that call Gemini, so nobody can drain the API quota.
+    "DEFAULT_THROTTLE_RATES": {
+        "ai": os.getenv("AI_THROTTLE_RATE", "40/hour"),
+    },
+    # Visitor identity for rate limits. Left unset (DRF default: the full
+    # X-Forwarded-For chain) so a wrong proxy count can never lump all
+    # visitors into one bucket. Logged-in users are limited per account
+    # anyway. Set NUM_PROXIES only once the exact proxy chain is known.
+    "NUM_PROXIES": int(os.environ["NUM_PROXIES"]) if os.getenv("NUM_PROXIES") else None,
 }
 
 from datetime import timedelta
@@ -155,10 +165,10 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 USE_TZ = True
+# Indian Standard Time for dates, alerts and the 02:00 / 07:00 scheduled jobs.
+TIME_ZONE = os.getenv("TIME_ZONE", "Asia/Kolkata")
 
 # ── ML / RAG config (env-driven) ─────────────────────────────────────────
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:1b")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-flash-lite-latest")
 CHROMA_DB_PATH = os.getenv("CHROMA_DB_PATH", str(BASE_DIR / "knowledge-base" / "chroma_db"))
@@ -176,6 +186,11 @@ EMAIL_TIMEOUT = int(os.environ.get('EMAIL_TIMEOUT', '5'))
 BREVO_API_KEY = os.getenv("BREVO_API_KEY", "")
 BREVO_SENDER_EMAIL = os.getenv("BREVO_SENDER_EMAIL", os.getenv("EMAIL_HOST_USER", "noreply@krishimitra.com"))
 BREVO_SENDER_NAME = os.getenv("BREVO_SENDER_NAME", "KrishiMitra")
+# Never send real emails from the test suite: Django's test runner swaps the
+# SMTP backend for an in-memory one, but Brevo is called over HTTPS directly.
+import sys as _sys
+if len(_sys.argv) > 1 and _sys.argv[1] == "test":
+    BREVO_API_KEY = ""
 
 # ── Google OAuth Configuration ────────────────────────────────────────
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
@@ -184,12 +199,30 @@ GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 # Render free instances spin down after inactivity; default scheduler to disabled.
 ENABLE_SCHEDULER = os.getenv("ENABLE_SCHEDULER", "0") == "1"
 
+# ── General security headers (safe in every environment) ──────────────
+# Stop browsers from MIME-sniffing responses, and limit referrer leakage.
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
+
 # ── HTTPS & Reverse Proxy Security (Production) ───────────────────────
 if not DEBUG:
+    # Render terminates TLS at its edge and forwards the original scheme.
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-    SECURE_SSL_REDIRECT = os.getenv("SECURE_SSL_REDIRECT", "0") == "1"
+    # Redirect HTTP → HTTPS. Default ON in production; safe behind Render's
+    # proxy thanks to SECURE_PROXY_SSL_HEADER (no redirect loop). Set
+    # SECURE_SSL_REDIRECT=0 only to intentionally allow plain HTTP.
+    SECURE_SSL_REDIRECT = os.getenv("SECURE_SSL_REDIRECT", "1") == "1"
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
+
+    # HTTP Strict Transport Security. Powerful but hard to reverse (browsers
+    # cache the policy), and on a shared *.onrender.com host includeSubDomains
+    # or preload can affect sibling apps. So it is OFF by default and opt-in
+    # via env once the backend runs on a stable/custom HTTPS domain.
+    # Recommended once stable: SECURE_HSTS_SECONDS=31536000 (1 year).
+    SECURE_HSTS_SECONDS = int(os.getenv("SECURE_HSTS_SECONDS", "0"))
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = os.getenv("SECURE_HSTS_INCLUDE_SUBDOMAINS", "0") == "1"
+    SECURE_HSTS_PRELOAD = os.getenv("SECURE_HSTS_PRELOAD", "0") == "1"
 
 # ── Port Configuration ────────────────────────────────────────────────
 PORT = int(os.getenv("PORT", 5001))

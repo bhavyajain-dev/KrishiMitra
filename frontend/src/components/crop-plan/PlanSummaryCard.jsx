@@ -14,7 +14,7 @@ export function PlanSummaryCard({ activePlan, durationDays, harvestDate, farmNam
   ];
 
   if (advancedPredictions?.yield) {
-    data.push({ label: "AI Yield Prediction", value: `${advancedPredictions.yield} Tons` });
+    data.push({ label: "AI Yield Prediction", value: `${advancedPredictions.yield} t/ha` });
   }
   if (advancedPredictions?.fertilizer) {
     data.push({ label: "AI Rec. Fertilizer", value: advancedPredictions.fertilizer });

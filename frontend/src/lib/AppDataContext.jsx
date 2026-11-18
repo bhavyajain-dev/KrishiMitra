@@ -1,9 +1,9 @@
+import { API_URL } from "@/lib/api";
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { useRouter } from "@tanstack/react-router";
 
 const AppDataContext = createContext();
 
-const API_URL = import.meta.env.VITE_API_URL || (typeof window !== "undefined" ? (typeof window !== "undefined" ? `http://${window.location.hostname}:5001/api` : "http://localhost:5001/api") : "http://localhost:5001/api");
 
 export function AppDataProvider({ children }) {
   const router = useRouter();

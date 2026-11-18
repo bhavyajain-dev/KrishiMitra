@@ -22,7 +22,7 @@ stack is a React (Vite / TanStack Start) frontend talking to a single Python
   users, farms,   crop-yield / fertilizer /     Open-Meteo (weather),
   expenses,       irrigation predictors,        data.gov.in (mandi prices),
   crop plans,     ChromaDB RAG retriever,       Google Gemini (disease/AI),
-  scheduler jobs  Ollama LLM summary            Ollama (optional, local)
+  scheduler jobs  Gemini LLM summaries
 ```
 
 Everything runs in **one** Django process on port **5001**. There is no separate
@@ -128,7 +128,6 @@ cp .env.example .env     # Windows cmd: copy .env.example .env
 | **AI Mitra Cloud LLM Fallback** | `GEMINI_API_KEY` | ℹ️ Automatically cascades to Tier-3 verified ChromaDB knowledge retrieval. |
 | **Password Reset OTP Email** | `EMAIL_HOST_USER` + `EMAIL_HOST_PASSWORD` | ℹ️ OTP codes are logged to the server console instead of sending real SMTP emails. |
 | **Live Mandi Price Sync** | `DATAGOV_API_KEY` | ℹ️ Live API sync skipped; platform serves 3,937 pre-seeded APMC market prices from SQLite. |
-| **Local LLM Chat Streaming** | `OLLAMA_BASE_URL` + `OLLAMA_MODEL` | ℹ️ Defaults to `http://127.0.0.1:11434` (`llama3.2:1b`); cascades gracefully if Ollama is offline. |
 
 ---
 
@@ -192,5 +191,5 @@ KrishiMitra_Demo/
 - **Academic/demo build:** no production hardening (rate limiting, HTTPS,
   tightened `ALLOWED_HOSTS`/CORS). `DEBUG` defaults to on.
 - **Disease leaf scanner** requires `GEMINI_API_KEY` in `backend/.env`.
-- **AI Mitra** uses local Ollama `llama3.2:1b` if running, or falls back to
-  Gemini / ChromaDB knowledge base automatically.
+- **AI Mitra** uses Google Gemini, and falls back to the verified ChromaDB
+  knowledge base automatically if Gemini is unavailable.
