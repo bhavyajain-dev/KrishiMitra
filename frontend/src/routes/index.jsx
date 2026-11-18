@@ -1,10 +1,9 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { BrandMark, ThemeToggle } from "@/components/app/AppShell";
-import { Sprout, LineChart, Shield, ChevronRight, Settings2, CloudRain } from "lucide-react";
-import { 
-  AreaChart, Area, XAxis, Tooltip, ResponsiveContainer,
-  BarChart, Bar, Cell
-} from "recharts";
+import {
+  Sprout, ChevronRight, CloudRain, Camera, Leaf, TrendingUp, FlaskConical,
+  MessagesSquare, IndianRupee, CalendarRange, Wallet, MapPinned, Sparkles,
+} from "lucide-react";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -14,25 +13,6 @@ export const Route = createFileRoute("/")({
   }),
   component: Landing,
 });
-
-const growthData = [
-  { name: 'Jan', value: 30 },
-  { name: 'Feb', value: 45 },
-  { name: 'Mar', value: 35 },
-  { name: 'Apr', value: 65 },
-  { name: 'May', value: 55 },
-  { name: 'Jun', value: 85 },
-  { name: 'Jul', value: 75 },
-];
-
-const allocationData = [
-  { name: 'W', value: 400 },
-  { name: 'S', value: 300 },
-  { name: 'F', value: 550 },
-  { name: 'C', value: 200 },
-  { name: 'L', value: 650 },
-  { name: 'T', value: 450 },
-];
 
 function Landing() {
   return (
@@ -88,7 +68,7 @@ function Landing() {
           </h1>
 
           <p className="text-muted-foreground text-base sm:text-xl max-w-2xl mb-10">
-            The all-in-one platform for agricultural teams who want clarity, precision, and sustainable growth from soil to harvest.
+            Crop recommendations from your soil test, weather alerts, leaf disease detection and mandi prices, in one place for Indian farmers.
           </p>
 
           <Link to="/auth" search={{ mode: "signup" }} className="rounded-full bg-primary text-background px-8 py-4 text-base font-bold transition-all hover:scale-105 glow-emerald flex items-center gap-2 mb-6">
@@ -98,26 +78,25 @@ function Landing() {
           {/* Removed trial badges per user request */}
         </div>
 
-        {/* Floating Cards */}
+        {/* Core features (real KrishiMitra capabilities) */}
         <div className="relative z-10 w-full max-w-6xl mt-12 sm:mt-24 grid grid-cols-1 md:grid-cols-3 gap-6">
-          
-          {/* Card 1 */}
-          <div className="glass-strong rounded-3xl p-8 hover:-translate-y-2 transition-transform duration-500">
+
+          {/* ML crop recommendations */}
+          <div className="glass-strong rounded-3xl p-6 sm:p-8 hover:-translate-y-2 transition-transform duration-500">
              <div className="h-12 w-12 rounded-xl border border-foreground/20 flex items-center justify-center mb-6">
                 <Sprout className="text-primary h-6 w-6" />
              </div>
-             <h3 className="text-xl font-bold text-foreground mb-3">Unify your farm data</h3>
+             <h3 className="text-xl font-bold text-foreground mb-3">ML crop recommendations</h3>
              <p className="text-muted-foreground text-sm leading-relaxed mb-8">
-               Connect all your sensors and weather data into a single source of truth.
+               A trained model ranks 25 crops for your farm from your soil test, local climate, season and state.
              </p>
-             {/* Abstract UI element */}
              <div className="h-32 rounded-xl border border-foreground/10 bg-background/40 flex items-center justify-center overflow-hidden relative">
-                 <div className="absolute left-4 top-1/2 -translate-y-1/2 flex flex-col gap-2">
-                    <div className="h-6 w-8 rounded bg-foreground/10" />
-                    <div className="h-6 w-8 rounded bg-foreground/10" />
-                    <div className="h-6 w-8 rounded bg-foreground/10" />
+                 <div className="absolute left-3 top-1/2 -translate-y-1/2 flex flex-col gap-2">
+                    {["Soil test", "Climate", "Season"].map((label) => (
+                      <div key={label} className="rounded-md bg-foreground/10 px-2 py-1 text-[10px] font-medium text-muted-foreground">{label}</div>
+                    ))}
                  </div>
-                 <svg className="absolute left-14 right-14 h-full w-[calc(100%-7rem)] opacity-30" preserveAspectRatio="none">
+                 <svg className="absolute left-20 right-14 h-full w-[calc(100%-8.5rem)] opacity-30" preserveAspectRatio="none">
                     <path d="M0 20 C 50 20, 50 60, 100 60 M0 50 C 50 50, 50 60, 100 60 M0 80 C 50 80, 50 60, 100 60" stroke="var(--color-primary)" fill="none" strokeWidth="2" strokeDasharray="4 4"/>
                  </svg>
                  <div className="absolute right-4 h-12 w-12 rounded-xl border border-primary/50 bg-primary/20 flex items-center justify-center glow-emerald">
@@ -126,51 +105,46 @@ function Landing() {
              </div>
           </div>
 
-          {/* Card 2 */}
-          <div className="glass-strong rounded-3xl p-8 hover:-translate-y-2 transition-transform duration-500">
+          {/* Leaf disease detection */}
+          <div className="glass-strong rounded-3xl p-6 sm:p-8 hover:-translate-y-2 transition-transform duration-500">
              <div className="h-12 w-12 rounded-xl border border-foreground/20 flex items-center justify-center mb-6">
-                <LineChart className="text-primary h-6 w-6" />
+                <Camera className="text-primary h-6 w-6" />
              </div>
-             <h3 className="text-xl font-bold text-foreground mb-3">Surface what matters</h3>
+             <h3 className="text-xl font-bold text-foreground mb-3">Leaf disease detection</h3>
              <p className="text-muted-foreground text-sm leading-relaxed mb-8">
-               AI that cuts through noise and highlights the insights that drive crop yield.
+               Upload a photo of a leaf to identify the disease and get treatment steps.
              </p>
-             {/* Chart UI element */}
-             <div className="h-32 rounded-xl border border-foreground/10 bg-background/40 pt-4 relative">
-                <div className="absolute right-4 top-2 text-xs font-bold text-primary flex items-center gap-1">↑ 32%</div>
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={growthData}>
-                    <defs>
-                      <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="var(--color-primary)" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="var(--color-primary)" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <Area type="monotone" dataKey="value" stroke="var(--color-primary)" strokeWidth={2} fillOpacity={1} fill="url(#colorValue)" />
-                  </AreaChart>
-                </ResponsiveContainer>
+             <div className="h-32 rounded-xl border border-foreground/10 bg-background/40 flex items-center justify-center relative overflow-hidden">
+                <div className="relative h-20 w-20">
+                  <span className="absolute left-0 top-0 h-4 w-4 border-l-2 border-t-2 border-primary rounded-tl" />
+                  <span className="absolute right-0 top-0 h-4 w-4 border-r-2 border-t-2 border-primary rounded-tr" />
+                  <span className="absolute left-0 bottom-0 h-4 w-4 border-l-2 border-b-2 border-primary rounded-bl" />
+                  <span className="absolute right-0 bottom-0 h-4 w-4 border-r-2 border-b-2 border-primary rounded-br" />
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <Leaf className="h-9 w-9 text-primary" />
+                  </div>
+                  <div className="absolute inset-x-1 top-1/2 h-0.5 bg-primary/70 glow-emerald animate-pulse" />
+                </div>
              </div>
           </div>
 
-          {/* Card 3 */}
-          <div className="glass-strong rounded-3xl p-8 hover:-translate-y-2 transition-transform duration-500">
+          {/* Weather & risk alerts */}
+          <div className="glass-strong rounded-3xl p-6 sm:p-8 hover:-translate-y-2 transition-transform duration-500">
              <div className="h-12 w-12 rounded-xl border border-foreground/20 flex items-center justify-center mb-6">
-                <Shield className="text-primary h-6 w-6" />
+                <CloudRain className="text-primary h-6 w-6" />
              </div>
-             <h3 className="text-xl font-bold text-foreground mb-3">Act with confidence</h3>
+             <h3 className="text-xl font-bold text-foreground mb-3">Weather & risk alerts</h3>
              <p className="text-muted-foreground text-sm leading-relaxed mb-8">
-               Built-in risk assessment and weather prediction so your farm can adapt fast, without risk.
+               A 16-day forecast for your farm, with alerts for heavy rain, heat and disease-prone humidity.
              </p>
-             {/* Radar UI element */}
              <div className="h-32 rounded-xl border border-foreground/10 bg-background/40 flex items-center justify-center relative overflow-hidden">
                 <div className="absolute inset-0 flex items-center justify-center">
                   <div className="h-32 w-32 rounded-full border border-primary/20" />
                   <div className="absolute h-20 w-20 rounded-full border border-primary/40" />
                   <div className="absolute h-8 w-8 rounded-full border border-primary text-primary flex items-center justify-center bg-primary/10 glow-emerald">
-                     <Shield className="h-3 w-3" />
+                     <CloudRain className="h-3 w-3" />
                   </div>
                 </div>
-                {/* Radar sweep */}
                 <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-primary/5 to-transparent animate-[spin_4s_linear_infinite]" style={{ transformOrigin: 'center' }} />
              </div>
           </div>
@@ -178,124 +152,99 @@ function Landing() {
         </div>
       </section>
 
-      {/* Dashboard Preview Section */}
-      <section className="relative py-12 sm:py-32 px-4 sm:px-6 flex justify-center overflow-hidden">
-         {/* Background */}
-        <div className="absolute inset-0 z-0">
-           <img 
-             src="https://images.unsplash.com/photo-1574943320219-553eb213f72d?auto=format&fit=crop&w=2000&q=80" 
-             alt="Dark soil background" 
-             className="w-full h-full object-cover opacity-20 mix-blend-luminosity"
-           />
-           <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-background" />
-        </div>
-
-        {/* Glass Dashboard Panel */}
+      {/* More features + how it works */}
+      <section className="relative py-12 sm:py-24 px-4 sm:px-6 flex justify-center overflow-hidden">
         <div className="relative z-10 w-full max-w-5xl glass-strong rounded-[2.5rem] border border-foreground/20 p-5 sm:p-12 shadow-2xl overflow-hidden">
-           
-           <div className="flex flex-wrap justify-between items-start gap-4 mb-8 sm:mb-10">
-              <div>
-                 <div className="text-muted-foreground text-sm font-semibold uppercase tracking-wider mb-2">AI for Success Toolkit</div>
-                 <h2 className="text-3xl sm:text-5xl font-bold text-foreground tracking-tight">SUSTAINABLE <br/>GROWTH</h2>
+
+           <div className="mb-8 sm:mb-10">
+              <div className="text-muted-foreground text-sm font-semibold uppercase tracking-wider mb-2">What KrishiMitra does</div>
+              <h2 className="text-3xl sm:text-5xl font-bold text-foreground tracking-tight">Everything for your farm</h2>
+           </div>
+
+           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+              <div className="rounded-2xl border border-foreground/10 bg-foreground/5 p-6 backdrop-blur-md">
+                <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl border border-primary/30 bg-primary/10">
+                  <TrendingUp className="h-5 w-5 text-primary" />
+                </div>
+                <h3 className="mb-2 text-base font-semibold text-foreground">Yield prediction</h3>
+                <p className="text-sm leading-relaxed text-muted-foreground">Expected yield in tonnes per hectare for each crop, from a model trained on two decades of Indian crop data.</p>
               </div>
-              <div className="flex shrink-0 items-center justify-center h-20 w-20 rounded-2xl border border-foreground/10 bg-background/30">
-                 <div className="relative flex items-center justify-center">
-                    <svg className="w-16 h-16 transform -rotate-90">
-                       <circle cx="32" cy="32" r="28" stroke="currentColor" strokeWidth="4" fill="transparent" className="text-foreground/10" />
-                       <circle cx="32" cy="32" r="28" stroke="currentColor" strokeWidth="4" fill="transparent" strokeDasharray="175" strokeDashoffset="45" className="text-primary drop-glow-emerald" />
-                    </svg>
-                    <span className="absolute text-sm font-bold text-foreground">46%</span>
-                 </div>
+              <div className="rounded-2xl border border-foreground/10 bg-foreground/5 p-6 backdrop-blur-md">
+                <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl border border-primary/30 bg-primary/10">
+                  <FlaskConical className="h-5 w-5 text-primary" />
+                </div>
+                <h3 className="mb-2 text-base font-semibold text-foreground">Fertilizer plans</h3>
+                <p className="text-sm leading-relaxed text-muted-foreground">Doses for every growth stage of your crop, based on ICAR guidelines.</p>
+              </div>
+              <div className="rounded-2xl border border-foreground/10 bg-foreground/5 p-6 backdrop-blur-md">
+                <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl border border-primary/30 bg-primary/10">
+                  <MessagesSquare className="h-5 w-5 text-primary" />
+                </div>
+                <h3 className="mb-2 text-base font-semibold text-foreground">AI Mitra assistant</h3>
+                <p className="text-sm leading-relaxed text-muted-foreground">Ask farming questions in plain language and get answers grounded in a verified knowledge base.</p>
+              </div>
+              <div className="rounded-2xl border border-foreground/10 bg-foreground/5 p-6 backdrop-blur-md">
+                <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl border border-primary/30 bg-primary/10">
+                  <IndianRupee className="h-5 w-5 text-primary" />
+                </div>
+                <h3 className="mb-2 text-base font-semibold text-foreground">Mandi prices</h3>
+                <p className="text-sm leading-relaxed text-muted-foreground">Daily commodity prices from APMC markets across India, from data.gov.in.</p>
+              </div>
+              <div className="rounded-2xl border border-foreground/10 bg-foreground/5 p-6 backdrop-blur-md">
+                <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl border border-primary/30 bg-primary/10">
+                  <CalendarRange className="h-5 w-5 text-primary" />
+                </div>
+                <h3 className="mb-2 text-base font-semibold text-foreground">Crop plan</h3>
+                <p className="text-sm leading-relaxed text-muted-foreground">A stage-by-stage timeline from land preparation to harvest, with field tips for each stage.</p>
+              </div>
+              <div className="rounded-2xl border border-foreground/10 bg-foreground/5 p-6 backdrop-blur-md">
+                <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl border border-primary/30 bg-primary/10">
+                  <Wallet className="h-5 w-5 text-primary" />
+                </div>
+                <h3 className="mb-2 text-base font-semibold text-foreground">Expense tracker</h3>
+                <p className="text-sm leading-relaxed text-muted-foreground">Log farm costs per crop and season, and see where your money goes.</p>
               </div>
            </div>
 
-           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              
-              {/* Growth Projections */}
-              <div className="rounded-2xl border border-foreground/10 bg-foreground/5 p-6 backdrop-blur-md">
-                 <h4 className="text-foreground font-medium mb-6">Growth Projections</h4>
-                 <div className="h-40">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={growthData}>
-                        <XAxis dataKey="name" hide />
-                        <Tooltip contentStyle={{ backgroundColor: 'var(--color-card)', borderColor: 'var(--color-border)', borderRadius: '8px' }} />
-                        <Area type="monotone" dataKey="value" stroke="var(--color-primary)" strokeWidth={3} fillOpacity={0} />
-                        <Area type="monotone" dataKey="value" stroke="var(--color-foreground)" strokeWidth={1} fillOpacity={0} className="opacity-30" style={{ transform: 'translateY(10px)' }}/>
-                      </AreaChart>
-                    </ResponsiveContainer>
-                 </div>
+           <div className="mt-10 sm:mt-14 border-t border-foreground/10 pt-8 sm:pt-10">
+              <h3 className="mb-6 text-xl sm:text-2xl font-bold text-foreground">How it works</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="flex items-start gap-4">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-background">1</div>
+                <div>
+                  <h4 className="flex items-center gap-2 font-semibold text-foreground"><MapPinned className="h-4 w-4 text-primary" />Add your farm</h4>
+                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground">Location, area, water source and your Soil Health Card values.</p>
+                </div>
               </div>
-
-              {/* Resource Allocation (3D-like Bars) */}
-              <div className="rounded-2xl border border-foreground/10 bg-foreground/5 p-6 backdrop-blur-md">
-                 <h4 className="text-foreground font-medium mb-6">Resource Allocation</h4>
-                 <div className="h-40">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={allocationData} barSize={20}>
-                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: 'var(--color-muted-foreground)', fontSize: 12 }} />
-                        <Tooltip cursor={{ fill: 'var(--color-accent)' }} contentStyle={{ backgroundColor: 'var(--color-card)', borderColor: 'var(--color-border)', borderRadius: '8px' }} />
-                        <Bar dataKey="value" radius={[4,4,0,0]}>
-                           {allocationData.map((entry, index) => (
-                             <Cell key={`cell-${index}`} fill={index % 2 === 0 ? 'var(--color-primary)' : 'var(--color-primary-hover)'} />
-                           ))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                 </div>
+              <div className="flex items-start gap-4">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-background">2</div>
+                <div>
+                  <h4 className="flex items-center gap-2 font-semibold text-foreground"><Sparkles className="h-4 w-4 text-primary" />Get recommendations</h4>
+                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground">Crops ranked for your soil and climate, with yield, fertilizer and irrigation advice.</p>
+                </div>
               </div>
-
-              {/* Efficiency Score */}
-              <div className="rounded-2xl border border-foreground/10 bg-foreground/5 p-6 backdrop-blur-md md:col-span-2 flex flex-col sm:flex-row items-center justify-between gap-8">
-                 <div className="flex-1">
-                   <h4 className="text-foreground font-medium mb-2">Efficiency Score</h4>
-                   <div className="text-4xl font-bold text-foreground mb-2">92.4 <span className="text-primary text-lg">↑</span></div>
-                   <div className="flex items-end gap-1 h-12 mt-6">
-                      {[30, 40, 20, 50, 60, 40, 70, 80, 60, 90, 70, 100, 80, 60, 40, 50].map((h, i) => (
-                         <div key={i} className="w-2 rounded-t-sm bg-primary/80 transition-all hover:bg-primary" style={{ height: `${h}%` }} />
-                      ))}
-                   </div>
-                 </div>
-                 <div className="flex items-center gap-6">
-                    <div className="text-center">
-                       <div className="relative flex items-center justify-center h-24 w-24">
-                          <svg className="w-full h-full transform -rotate-90">
-                             <circle cx="48" cy="48" r="42" stroke="currentColor" strokeWidth="8" fill="transparent" className="text-foreground/10" />
-                             <circle cx="48" cy="48" r="42" stroke="currentColor" strokeWidth="8" fill="transparent" strokeDasharray="264" strokeDashoffset="120" className="text-primary" />
-                          </svg>
-                          <div className="absolute text-center">
-                             <div className="text-xl font-bold text-foreground">46%</div>
-                             <div className="text-[10px] text-muted-foreground uppercase">Canopy</div>
-                          </div>
-                       </div>
-                    </div>
-                    <div className="text-center">
-                       <div className="relative flex items-center justify-center h-24 w-24">
-                          <svg className="w-full h-full transform -rotate-90">
-                             <circle cx="48" cy="48" r="42" stroke="currentColor" strokeWidth="8" fill="transparent" className="text-foreground/10" />
-                             <circle cx="48" cy="48" r="42" stroke="currentColor" strokeWidth="8" fill="transparent" strokeDasharray="264" strokeDashoffset="200" className="text-primary/50" />
-                          </svg>
-                          <div className="absolute text-center">
-                             <div className="text-xl font-bold text-foreground">9.96</div>
-                             <div className="text-[10px] text-muted-foreground uppercase">Yield</div>
-                          </div>
-                       </div>
-                    </div>
-                 </div>
+              <div className="flex items-start gap-4">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-background">3</div>
+                <div>
+                  <h4 className="flex items-center gap-2 font-semibold text-foreground"><CalendarRange className="h-4 w-4 text-primary" />Plan, track and sell</h4>
+                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground">Follow your crop plan, log expenses and check mandi prices.</p>
+                </div>
               </div>
-
+              </div>
+              <div className="mt-8 flex justify-center">
+                <Link to="/auth" search={{ mode: "signup" }} className="rounded-full bg-primary text-background px-7 py-3 text-sm font-bold transition-all hover:scale-105 glow-emerald flex items-center gap-2">
+                  Get Started Free <ChevronRight className="h-4 w-4" />
+                </Link>
+              </div>
            </div>
         </div>
       </section>
 
       {/* Footer */}
       <footer className="border-t border-foreground/10 px-6 py-8">
-        <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-4 text-sm text-muted-foreground sm:flex-row">
+        <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-3 text-center sm:flex-row sm:text-left">
           <BrandMark />
-          <div className="flex items-center gap-5">
-            <Link to="/auth" search={{ mode: "login" }} className="hover:text-primary transition-colors">Log in</Link>
-            <Link to="/auth" search={{ mode: "signup" }} className="hover:text-primary transition-colors">Sign up</Link>
-          </div>
-          <p className="text-xs">© 2026 KrishiMitra · Smart farming for Indian farmers</p>
+          <p className="text-xs text-muted-foreground">© 2026 KrishiMitra · Smart farming assistant for Indian farmers</p>
         </div>
       </footer>
     </div>

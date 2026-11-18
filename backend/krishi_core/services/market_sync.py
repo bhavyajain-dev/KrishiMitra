@@ -13,6 +13,27 @@ def parse_api_date(date_str):
     except Exception:
         return datetime.now()
 
+def _fetch_page(url, params, attempts=3):
+    """GET one page with retries: data.gov.in often returns 502/504 or times
+    out for a while. Returns the JSON dict, or None after all attempts fail."""
+    import time
+    for attempt in range(1, attempts + 1):
+        try:
+            resp = requests.get(url, params=params, timeout=(10, 90))
+            if resp.status_code >= 500:
+                print(f"[MarketSyncService] data.gov.in returned HTTP {resp.status_code} (attempt {attempt}/{attempts})")
+            else:
+                resp.raise_for_status()
+                return resp.json()
+        except ValueError:
+            print(f"[MarketSyncService] data.gov.in sent an invalid response (attempt {attempt}/{attempts})")
+        except requests.exceptions.RequestException as e:
+            print(f"[MarketSyncService] request failed: {type(e).__name__} (attempt {attempt}/{attempts})")
+        if attempt < attempts:
+            time.sleep(5 * attempt)
+    return None
+
+
 def sync_daily_market_data():
     datagov_key = os.getenv("DATAGOV_API_KEY")
     base_url = "https://api.data.gov.in/resource/9ef84268-d588-465a-a308-a864a43d0070"
@@ -23,7 +44,7 @@ def sync_daily_market_data():
 
     try:
         offset = 0
-        limit = 2000
+        limit = 500   # data.gov.in often times out on large pages
         total_processed = 0
         has_more = True
 
@@ -37,10 +58,11 @@ def sync_daily_market_data():
                 "limit": limit,
                 "offset": offset,
             }
-            response = requests.get(base_url, params=params, timeout=120)
-            response.raise_for_status()
-
-            data = response.json()
+            data = _fetch_page(base_url, params)
+            if data is None:
+                print("[MarketSyncService] data.gov.in is not responding (gave up after retries). "
+                      "Their API has outages; try again later.")
+                return total_processed or None
             records = data.get("records", [])
 
             if not records:
