@@ -177,7 +177,9 @@ export function AppDataProvider({ children }) {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ ...body, farm: activeFarmId }),
+      // An explicit farm in the body wins (e.g. analysing a farm that is not
+      // the active one); otherwise tag the record with the active farm.
+      body: JSON.stringify({ ...body, farm: body?.farm ?? activeFarmId }),
     });
     if (res.status === 401) {
       return { error: "Unauthorized" };

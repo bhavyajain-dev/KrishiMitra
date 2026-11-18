@@ -1,4 +1,5 @@
 import { API_URL } from "@/lib/api";
+import { validatePasswordPolicy, normalizeIndianPhone } from "@/lib/validation";
 import { Link, createFileRoute, useNavigate, redirect } from "@tanstack/react-router";
 import { useState, useEffect, useRef } from "react";
 import {
@@ -61,34 +62,6 @@ const isValidEmail = (email) => {
 // - At least one lowercase letter (a-z)
 // - At least one digit (0-9)
 // - At least one special character
-const validatePasswordPolicy = (pwd) => {
-  if (!pwd || pwd.length < 8) {
-    return "Password must be at least 8 characters long.";
-  }
-  if (pwd.length > 128) {
-    return "Password cannot exceed 128 characters.";
-  }
-  if (!/[A-Z]/.test(pwd)) {
-    return "Password must contain at least one uppercase letter (A-Z).";
-  }
-  if (!/[a-z]/.test(pwd)) {
-    return "Password must contain at least one lowercase letter (a-z).";
-  }
-  if (!/[0-9]/.test(pwd)) {
-    return "Password must contain at least one digit (0-9).";
-  }
-  if (!/[!@#$%^&*(),.?":{}|<>\-_+=\[\]\\/'~`;]/.test(pwd)) {
-    return "Password must contain at least one special character (e.g. !@#$%^&*).";
-  }
-  const lower = pwd.toLowerCase();
-  const base = lower.replace(/[\d!@#$%^&*(),.?":{}|<>\-_+=\[\]\\/'~`;]+$/, "");
-  const commonWords = ["password", "password123", "admin", "admin123", "qwerty", "123456", "12345678", "welcome", "welcome123", "letmein", "krishimitra"];
-  if (commonWords.includes(lower) || commonWords.includes(base)) {
-    return "Password is too common or easily guessable. Please choose a more unique password.";
-  }
-  return null;
-};
-
 const getApiUrl = () => API_URL;
 
 // Resilient fetch wrapper with client-side abort timeout.
@@ -647,10 +620,18 @@ function AuthPage() {
 
     const name = signupName.trim();
     const email = signupEmail.trim().toLowerCase();
-    const phone = signupPhone.trim();
+    const phone = signupPhone.trim() ? normalizeIndianPhone(signupPhone) : "";
 
     if (!name) {
       setApiError("Please enter your full name.");
+      return;
+    }
+    if (name.length > 150) {
+      setApiError("Name is too long (max 150 characters).");
+      return;
+    }
+    if (phone === null) {
+      setApiError("Enter a valid 10-digit Indian mobile number, or leave it empty.");
       return;
     }
     if (!isValidEmail(email)) {
@@ -744,7 +725,7 @@ function AuthPage() {
           password: signupPassword,
           firstName,
           lastName,
-          phone: signupPhone.trim() || undefined,
+          phone: normalizeIndianPhone(signupPhone) || undefined,
           otp: code,
           role: "farmer",
           farmingMode: "moderate",

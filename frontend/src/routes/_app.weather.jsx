@@ -144,19 +144,21 @@ async function fetchWeatherForLocation(locationQuery, inputLat, inputLon) {
   
   const data = await weatherRes.json();
 
+  // Missing readings stay null and show as "--"; never invent a value.
+  const round = (v) => (v == null || !Number.isFinite(Number(v)) ? null : Math.round(Number(v)));
   const current = {
-    temp: Math.round(data.current?.temperature ?? 28),
-    feelsLike: Math.round(data.current?.feels_like ?? 28),
-    humidity: data.current?.humidity ?? 65,
-    wind: Math.round(data.current?.wind_speed ?? 12),
-    windDir: data.current?.wind_direction ?? 225,
-    rainChance: data.daily_forecast?.[0]?.precipitation_probability_max ?? 10,
+    temp: round(data.current?.temperature),
+    feelsLike: round(data.current?.feels_like),
+    humidity: data.current?.humidity ?? null,
+    wind: round(data.current?.wind_speed),
+    windDir: data.current?.wind_direction ?? null,
+    rainChance: data.daily_forecast?.[0]?.precipitation_probability_max ?? null,
     precipitation: data.current?.precipitation ?? 0,
-    uv: data.daily_forecast?.[0]?.uv_index_max ?? 5,
-    visibility: data.current?.visibility != null ? Math.round(data.current.visibility > 100 ? data.current.visibility / 1000 : data.current.visibility) : 15,
-    pressure: data.current?.pressure ?? 1007,
-    sunrise: data.daily_forecast?.[0]?.sunrise?.split("T")[1]?.slice(0,5) ?? "06:05",
-    sunset: data.daily_forecast?.[0]?.sunset?.split("T")[1]?.slice(0,5) ?? "19:23",
+    uv: data.daily_forecast?.[0]?.uv_index_max != null ? Math.round(data.daily_forecast[0].uv_index_max * 10) / 10 : null,
+    visibility: data.current?.visibility != null ? Math.round(data.current.visibility > 100 ? data.current.visibility / 1000 : data.current.visibility) : null,
+    pressure: data.current?.pressure ?? null,
+    sunrise: data.daily_forecast?.[0]?.sunrise?.split("T")[1]?.slice(0,5) ?? "--",
+    sunset: data.daily_forecast?.[0]?.sunset?.split("T")[1]?.slice(0,5) ?? "--",
   };
 
   const days = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
@@ -369,11 +371,19 @@ function WeatherPage() {
     }
 
     if (chosen) {
+      // Same place already listed (e.g. home and farm are both Ludhiana)?
+      // Don't show it twice.
+      const samePlace = (l) =>
+        l.id === chosen.id ||
+        (l.lat != null && chosen.lat != null && Math.abs(l.lat - chosen.lat) < 0.05 && Math.abs(l.lon - chosen.lon) < 0.05) ||
+        (l.query && chosen.query && l.query.trim().toLowerCase() === chosen.query.trim().toLowerCase());
+      let keptId = chosen.id;
       setLocations(prev => {
-        if (prev.find(l => l.id === chosen.id)) return prev;
+        const dup = prev.find(samePlace);
+        if (dup) { keptId = dup.id; return prev; }
         return [chosen, ...prev];
       });
-      setActiveId(prev => prev || chosen.id);
+      setActiveId(prev => prev || keptId);
     }
   }, [userLocation, activeFarm]);
 
@@ -506,10 +516,12 @@ function WeatherPage() {
 
   const windDirLabel = (deg) => {
     const dirs = ["N","NE","E","SE","S","SW","W","NW"];
+    if (deg == null || !Number.isFinite(Number(deg))) return "--";
     return dirs[Math.round(deg / 45) % 8];
   };
 
   const uvLabel = (uv) => {
+    if (uv == null) return "--";
     if (uv <= 2) return "Low";
     if (uv <= 5) return "Moderate";
     if (uv <= 7) return "High";
@@ -564,9 +576,9 @@ Instructions:
       prompt,
       metadata: {
         cityName,
-        temp: curr?.temp ?? 28,
+        temp: curr?.temp ?? null,
         condition: cond,
-        rainChance: curr?.rainChance ?? 10,
+        rainChance: curr?.rainChance ?? null,
       },
     });
 
@@ -577,7 +589,7 @@ Instructions:
     <div>
       <PageHeader
         title="Weather & Advisory"
-        subtitle={active ? `${active.cityName} · ${sky.label}` : "Loading conditions..."}
+        subtitle={active ? `${active.cityName} · ${sky.label}` : (locations.length ? "Loading conditions..." : "No location set yet")}
         action={
           <div className="flex items-center gap-2">
             {activeMeta && (
@@ -790,11 +802,11 @@ Instructions:
                     {active.cityName}
                   </div>
                   <div className="mt-1.5 text-sm text-white/80">
-                    {sky.label} • Feels like {active.current.feelsLike}°
+                    {sky.label} • Feels like {active.current.feelsLike ?? "--"}°
                   </div>
                 </div>
                 <div className="text-right text-white">
-                  <div className="font-display text-6xl font-bold leading-none">{active.current.temp}°</div>
+                  <div className="font-display text-6xl font-bold leading-none">{active.current.temp ?? "--"}°</div>
                   <div className="mt-2 text-sm text-white/80">
                     H:{active.daily[0]?.hi}° • L:{active.daily[0]?.lo}°
                   </div>
@@ -862,12 +874,12 @@ Instructions:
                 <div className="mb-2 flex items-center gap-1 text-[10px] uppercase tracking-widest text-muted-foreground">
                   <Sun className="h-3 w-3" /> UV Index
                 </div>
-                <div className="font-display text-3xl font-bold">{active.current.uv}</div>
+                <div className="font-display text-3xl font-bold">{active.current.uv ?? "--"}</div>
                 <div className="mt-1 text-sm font-medium text-foreground/80">{uvLabel(active.current.uv)}</div>
                 <div className="mt-3 h-1.5 overflow-hidden rounded-full"
                   style={{ background: "linear-gradient(to right, #22c55e, #eab308, #ef4444, #7c3aed)" }}>
                   <div className="h-full w-2 rounded-full bg-white shadow"
-                    style={{ marginLeft: `${Math.min((active.current.uv / 11) * 100, 95)}%` }} />
+                    style={{ marginLeft: `${Math.min(((active.current.uv ?? 0) / 11) * 100, 95)}%` }} />
                 </div>
                 <div className="mt-2 text-[11px] text-muted-foreground">
                   {active.current.uv <= 2 ? "No protection needed" : `Use sun protection ${active.current.sunrise}–${active.current.sunset}`}
@@ -896,7 +908,7 @@ Instructions:
                   <Wind className="h-3 w-3" /> Wind
                 </div>
                 <div className="flex items-end gap-2">
-                  <div className="font-display text-3xl font-bold">{active.current.wind}</div>
+                  <div className="font-display text-3xl font-bold">{active.current.wind ?? "--"}</div>
                   <div className="mb-1 text-sm text-muted-foreground">km/h</div>
                 </div>
                 <div className="mt-3 flex items-center justify-between">
@@ -911,7 +923,7 @@ Instructions:
                         </span>
                       ))}
                       <Navigation className="h-5 w-5 text-cyan"
-                        style={{ transform: `rotate(${active.current.windDir}deg)` }} />
+                        style={{ transform: `rotate(${active.current.windDir ?? 0}deg)` }} />
                     </div>
                   </div>
                   <div className="text-right">
@@ -932,7 +944,7 @@ Instructions:
                 </div>
                 <div className="mt-1 text-sm text-muted-foreground">Today</div>
                 <div className="mt-2 text-[11px] text-muted-foreground">
-                  {active.current.rainChance}% chance of rain
+                  {active.current.rainChance ?? "--"}% chance of rain
                 </div>
               </div>
 
@@ -941,7 +953,7 @@ Instructions:
                 <div className="mb-2 flex items-center gap-1 text-[10px] uppercase tracking-widest text-muted-foreground">
                   <Thermometer className="h-3 w-3" /> Feels Like
                 </div>
-                <div className="font-display text-3xl font-bold">{active.current.feelsLike}°</div>
+                <div className="font-display text-3xl font-bold">{active.current.feelsLike ?? "--"}°</div>
                 <div className="mt-2 text-sm text-muted-foreground">
                   {Math.abs(active.current.feelsLike - active.current.temp) < 2
                     ? "Similar to the actual temperature."
@@ -975,11 +987,11 @@ Instructions:
                   <Eye className="h-3 w-3" /> Visibility
                 </div>
                 <div className="flex items-end gap-2">
-                  <div className="font-display text-3xl font-bold">{active.current.visibility}</div>
+                  <div className="font-display text-3xl font-bold">{active.current.visibility ?? "--"}</div>
                   <div className="mb-1 text-sm text-muted-foreground">km</div>
                 </div>
                 <div className="mt-2 text-sm text-muted-foreground">
-                  {active.current.visibility >= 10 ? "Perfectly clear view." : "Reduced visibility."}
+                  {active.current.visibility == null ? "Not reported." : active.current.visibility >= 10 ? "Perfectly clear view." : "Reduced visibility."}
                 </div>
               </div>
 
@@ -989,7 +1001,7 @@ Instructions:
                   <Gauge className="h-3 w-3" /> Pressure
                 </div>
                 <div className="flex items-end gap-2">
-                  <div className="font-display text-3xl font-bold">{active.current.pressure}</div>
+                  <div className="font-display text-3xl font-bold">{active.current.pressure ?? "--"}</div>
                   <div className="mb-1 text-sm text-muted-foreground">hPa</div>
                 </div>
                 <div className="mt-2 flex justify-between text-[11px] text-muted-foreground">
@@ -997,7 +1009,7 @@ Instructions:
                 </div>
                 <div className="h-1.5 overflow-hidden rounded-full bg-secondary/60">
                   <div className="h-full rounded-full bg-primary"
-                    style={{ width: `${Math.min(((active.current.pressure - 980) / 50) * 100, 100)}%` }} />
+                    style={{ width: `${active.current.pressure == null ? 0 : Math.max(0, Math.min(((active.current.pressure - 980) / 50) * 100, 100))}%` }} />
                 </div>
               </div>
             </div>

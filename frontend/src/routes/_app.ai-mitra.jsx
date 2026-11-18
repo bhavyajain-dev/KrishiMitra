@@ -42,9 +42,9 @@ const chartTooltip = {
 };
 
 const SUGGESTION_PROMPTS = [
-  { icon: "🌾", title: "Kharif Crop Plan", desc: "Give me a full Kharif season soybean crop plan with a weekly schedule table." },
-  { icon: "💰", title: "Farm Budget", desc: "Show my monthly farm budget breakdown as a pie chart." },
-  { icon: "📈", title: "Yield Trends", desc: "Show crop yield trend over 6 months as a line chart." },
+  { icon: "🌾", title: "Rabi Crop Plan", desc: "Give me a full Rabi season wheat crop plan with a weekly schedule table." },
+  { icon: "💰", title: "Cost of Cultivation", desc: "Typical per-acre cost of growing wheat in Punjab, by input, as a pie chart." },
+  { icon: "📈", title: "Fertilizer Schedule", desc: "Give me a stage-wise fertilizer schedule for wheat in a table." },
   { icon: "🐛", title: "Pest Diagnosis", desc: "My tomato leaves have yellow spots. Identify and give a treatment plan." },
   { icon: "🧪", title: "Soil Correction", desc: "My soil pH is 5.2. Give me a correction plan in a table." },
   { icon: "🌦️", title: "Weather Impact", desc: "Compare how wheat, rice and cotton handle heavy rain — bar chart." },
@@ -169,8 +169,15 @@ function FormattedText({ text }) {
   const out = [];
   let i = 0;
 
+  // Escape first: AI text is rendered as HTML, so any tags in it must be
+  // shown as text, never executed (XSS). Then apply the small markdown set.
   const fmt = (s) =>
-    s
+    String(s ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;")
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
       .replace(/\*(.+?)\*/g, '<em>$1</em>')
       .replace(/`([^`]+)`/g, '<code class="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-xs text-foreground">$1</code>');
@@ -218,7 +225,7 @@ function FormattedText({ text }) {
     if (line.startsWith("### ")) {
       out.push(
         <h3 key={i} className="mt-5 mb-2 font-display text-sm font-bold text-foreground tracking-tight">
-          {line.replace("### ", "")}
+          <span dangerouslySetInnerHTML={{ __html: fmt(line.replace("### ", "").replace(/\*\*/g, "")) }} />
         </h3>
       );
       i++; continue;
@@ -228,7 +235,7 @@ function FormattedText({ text }) {
     if (line.startsWith("## ")) {
       out.push(
         <h2 key={i} className="mt-6 mb-2.5 font-display text-base font-bold text-foreground tracking-tight">
-          {line.replace("## ", "")}
+          <span dangerouslySetInnerHTML={{ __html: fmt(line.replace("## ", "").replace(/\*\*/g, "")) }} />
         </h2>
       );
       i++; continue;
@@ -238,7 +245,7 @@ function FormattedText({ text }) {
     if (line.startsWith("# ")) {
       out.push(
         <h1 key={i} className="mt-7 mb-3 font-display text-lg font-bold text-foreground tracking-tight">
-          {line.replace("# ", "")}
+          <span dangerouslySetInnerHTML={{ __html: fmt(line.replace("# ", "").replace(/\*\*/g, "")) }} />
         </h1>
       );
       i++; continue;
@@ -334,7 +341,7 @@ function Message({ msg, onEdit, onRetry }) {
             <div className="flex flex-col gap-2">
               <textarea
                 className="w-full rounded-2xl border border-primary/40 bg-surface px-4 py-3 text-sm text-foreground outline-none resize-none focus:ring-1 focus:ring-primary/50"
-                value={editText} onChange={e => setEditText(e.target.value)} rows={3} autoFocus />
+                value={editText} onChange={e => setEditText(e.target.value)} rows={3} maxLength={4000} autoFocus />
               <div className="flex justify-end gap-2">
                 <button onClick={() => setEditing(false)} className="rounded-xl border border-border px-4 py-1.5 text-sm text-muted-foreground hover:bg-surface-2 transition-colors">Cancel</button>
                 <button onClick={() => { onEdit?.(msg.id, editText); setEditing(false); }} className="rounded-xl bg-foreground px-4 py-1.5 text-sm font-medium text-background hover:opacity-90 transition-opacity">Send</button>
@@ -1169,6 +1176,11 @@ function AiMitraPage() {
   const scrollToBottom = useCallback((behavior = "instant") => {
     const el = scrollContainerRef.current;
     if (!el) return;
+    // Welcome screen (no messages): keep its heading in view instead.
+    if (el.querySelector("[data-welcome]")) {
+      el.scrollTop = 0;
+      return;
+    }
     if (behavior === "instant") {
       el.scrollTop = el.scrollHeight;
     } else {
@@ -1198,7 +1210,7 @@ function AiMitraPage() {
   };
 
   useEffect(() => {
-    if (!loading && tab === "chat") {
+    if (!loading && tab === "chat" && typeof window !== "undefined" && window.matchMedia?.("(pointer: fine)").matches) {
       textRef.current?.focus();
     }
   }, [loading, tab]);
@@ -1683,11 +1695,11 @@ function AiMitraPage() {
             {/* Tab switcher */}
             <div className="sm:ml-2 flex items-center gap-0.5 rounded-lg border border-border bg-surface p-1">
               <button onClick={() => setTab("chat")}
-                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 min-h-[32px] text-xs font-medium transition-all cursor-pointer ${tab === "chat" ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+                className={`flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 sm:px-3 py-1.5 min-h-[32px] text-xs font-medium transition-all cursor-pointer ${tab === "chat" ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
                 <Sparkles className="h-3 w-3" /> Chat
               </button>
               <button onClick={() => setTab("disease")}
-                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 min-h-[32px] text-xs font-medium transition-all cursor-pointer ${tab === "disease" ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+                className={`flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 sm:px-3 py-1.5 min-h-[32px] text-xs font-medium transition-all cursor-pointer ${tab === "disease" ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
                 <Microscope className="h-3 w-3" /> Scan Leaf
               </button>
             </div>
@@ -1713,7 +1725,7 @@ function AiMitraPage() {
               title="Start a new chat"
             >
               <Plus className="h-3.5 w-3.5" />
-              <span>New Chat</span>
+              <span className="whitespace-nowrap"><span className="hidden min-[400px]:inline">New </span>Chat</span>
             </button>
           </div>
         </header>
@@ -1743,16 +1755,16 @@ function AiMitraPage() {
               className="flex-1 min-h-0 overflow-y-auto">
               {isEmpty ? (
                 /* ── Welcome / suggestions ── */
-                <div className="flex h-full flex-col items-center justify-center px-4 py-8">
-                  <div className="w-full max-w-2xl">
+                <div data-welcome className="flex min-h-full flex-col items-center px-4 py-5 sm:py-8">
+                  <div className="my-auto w-full max-w-2xl">
                     {/* Hero */}
-                    <div className="mb-8 text-center">
-                      <div className="mx-auto mb-4 relative grid h-14 w-14 sm:h-16 sm:w-16 place-items-center rounded-2xl bg-primary/15 ring-1 ring-primary/30 shadow-sm">
-                        <Leaf className="h-7 w-7 sm:h-8 sm:w-8 text-primary" />
+                    <div className="mb-5 sm:mb-8 pt-1 text-center">
+                      <div className="mx-auto mb-3 sm:mb-4 relative grid h-12 w-12 sm:h-16 sm:w-16 place-items-center rounded-2xl bg-primary/15 ring-1 ring-primary/30 shadow-sm">
+                        <Leaf className="h-6 w-6 sm:h-8 sm:w-8 text-primary" />
                         <span className="absolute -right-1 -top-1 h-3 w-3 rounded-full bg-primary pulse-dot" />
                       </div>
                       <h1 className="text-xl sm:text-2xl font-bold text-foreground">How can I help your farm?</h1>
-                      <p className="mt-2 text-xs sm:text-sm text-muted-foreground">Ask anything about crops, soil, pests, budgets, weather, or schedules.</p>
+                      <p className="mt-2 text-xs sm:text-sm text-muted-foreground">Ask anything about crops, soil, pests, costs, weather, or schedules.</p>
                     </div>
 
                     {/* Suggestions */}
@@ -1761,8 +1773,8 @@ function AiMitraPage() {
                         <button
                           key={idx}
                           onClick={() => send(item.desc)}
-                          className="flex items-start gap-3 rounded-2xl border border-border bg-surface p-3.5 text-left transition-all hover:border-primary/40 hover:bg-surface-2 cursor-pointer group">
-                          <span className="text-xl">{item.icon}</span>
+                          className="flex items-start gap-3 rounded-2xl border border-border bg-surface p-3 sm:p-3.5 text-left transition-all hover:border-primary/40 hover:bg-surface-2 cursor-pointer group">
+                          <span className="text-lg sm:text-xl leading-none mt-0.5">{item.icon}</span>
                           <div className="min-w-0">
                             <p className="text-xs font-semibold text-foreground group-hover:text-primary transition-colors">{item.title}</p>
                             <p className="text-[11px] text-muted-foreground line-clamp-2 mt-0.5">{item.desc}</p>
@@ -1847,6 +1859,7 @@ function AiMitraPage() {
                     }}
                     onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
                     placeholder="Message AI Mitra..."
+                    maxLength={4000}
                     disabled={loading}
                     rows={1}
                     className="chat-input-textarea w-full resize-none bg-transparent px-5 pt-4 pb-2 text-sm text-foreground placeholder:text-muted-foreground outline-none leading-7 max-h-[200px] overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden disabled:opacity-60"
@@ -1879,7 +1892,7 @@ function AiMitraPage() {
                 </div>
 
                 {/* Mobile disclaimer: cleanly formatted on two centered lines */}
-                <div className="mt-2 pb-2.5 px-4 text-center text-[11px] leading-snug text-muted-foreground/70">
+                <div className="mt-2 pb-[max(0.625rem,env(safe-area-inset-bottom))] px-4 text-center text-[11px] leading-snug text-muted-foreground/70">
                   <p>AI Mitra may make mistakes.</p>
                   <p>Verify important farming decisions with local experts.</p>
                 </div>

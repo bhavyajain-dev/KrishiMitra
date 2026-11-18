@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { AlertTriangle, BellRing, CheckCheck, CloudRain, Info, ShieldAlert, Sprout, Timer, RotateCcw } from "lucide-react";
+import { AlertTriangle, CheckCheck, CloudRain, Info, ShieldAlert, Sprout, Timer, RotateCcw } from "lucide-react";
 import { useAppData } from "@/lib/AppDataContext";
 import { PageHeader } from "@/components/app/AppShell";
 import { toast } from "sonner";
@@ -47,7 +47,6 @@ const DEFAULT_RADAR = {
   "Weather risk": { level: "Low", pct: 0, tone: "primary" },
   "Schedule delay risk": { level: "Low", pct: 0, tone: "primary" },
   "Crop health risk": { level: "Low", pct: 0, tone: "primary" },
-  "Equipment risk": { level: "Low", pct: 0, tone: "primary" },
 };
 
 
@@ -70,7 +69,6 @@ function AlertsPage() {
     { icon: CloudRain, label: "Weather risk", ...radarData["Weather risk"] },
     { icon: Timer, label: "Schedule delay risk", ...radarData["Schedule delay risk"] },
     { icon: Sprout, label: "Crop health risk", ...radarData["Crop health risk"] },
-    { icon: BellRing, label: "Equipment risk", ...radarData["Equipment risk"] },
   ];
 
   // Persist dismissal as status: "dismissed" so it survives a refresh
@@ -142,7 +140,7 @@ function AlertsPage() {
       />
 
       {/* Risk radar */}
-      <section className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="mb-6 grid gap-4 sm:grid-cols-3">
         {riskCategories.map((r) => (
           <div key={r.label} className="glass hover-lift rounded-2xl p-5">
             <div className="flex items-center justify-between">
