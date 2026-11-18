@@ -1,4 +1,5 @@
 import { API_URL, fetchWeather } from "@/lib/api";
+import { currentSeason } from "@/lib/season";
 import { Link, createFileRoute } from "@tanstack/react-router";
 import {
   ArrowRight,
@@ -9,7 +10,6 @@ import {
   MapPinned,
   Sparkles,
   Sun,
-  ThermometerSun,
   Wallet,
   Wind,
 } from "lucide-react";
@@ -113,7 +113,20 @@ function Dashboard() {
   }, [token, activeFarm, weatherSnapshot]);
 
   const totalArea = farms.reduce((s, f) => s + (f.areaAcres || 0), 0);
-  const activeFarms = farms.filter((f) => f.isActive).length;
+  // This season's spend on the farm being viewed (real expenses only).
+  const [seasonSpend, setSeasonSpend] = useState(null);
+  const viewingFarmId = activeFarm?._id || activeFarm?.id || null;
+  useEffect(() => {
+    if (!viewingFarmId) { setSeasonSpend(null); return; }
+    let cancelled = false;
+    fetchScoped("/expenses")
+      .then((list) => {
+        if (cancelled || !Array.isArray(list)) return;
+        setSeasonSpend(list.reduce((sum, e) => sum + (Number(e.amountRs) || 0), 0));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [viewingFarmId, fetchScoped]);
   const firstName = userProfile?.name?.split(" ")[0] || "Farmer";
   const today = new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
@@ -253,19 +266,25 @@ function Dashboard() {
 
       {/* Stat cards */}
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Total farms" value={String(farms.length)} hint={`${totalArea.toFixed(1)} acres · ${activeFarms} active`} tone="primary" bar={farms.length > 0 ? 100 : 0} />
-        <StatCard label="Crop plan progress" value={`${cropProgress}%`} hint={cropPlan?.cropName ? `${cropPlan.cropName} · ${cropProgressHint}` : cropProgressHint} tone="cyan" bar={cropProgress} />
-        <StatCard label="Active risk alerts" value={String(alerts.length)} hint={alerts.length > 0 ? `${alerts.filter(a => a.severity === "critical").length} critical` : "No alerts"} tone="warning" />
-        <StatCard label="Active farm" value={activeFarm?.name?.split("—")[0]?.trim() || "None"} hint={activeFarm ? `${activeFarm.areaAcres} acres · ${activeFarm.soilType}` : "Select or add a farm"} tone="foreground" />
+        <StatCard to="/farms" label="Total farms" value={String(farms.length)} hint={farms.length ? `${totalArea.toFixed(1)} acres in total` : "Add your first farm"} tone="primary" bar={farms.length > 0 ? 100 : 0} />
+        <StatCard to="/crop-plan" label="Crop plan progress" value={`${cropProgress}%`} hint={cropPlan?.cropName ? `${cropPlan.cropName} · ${cropProgressHint}` : cropProgressHint} tone="cyan" bar={cropProgress} />
+        <StatCard to="/alerts" label="Risk alerts" value={String(alerts.length)} hint={alerts.length > 0 ? `${alerts.filter(a => a.severity === "critical").length} critical` : "No alerts"} tone="warning" />
+        <StatCard
+          to="/expenses"
+          label="Season spend"
+          value={seasonSpend == null ? "—" : `₹${seasonSpend.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`}
+          hint={activeFarm ? `${activeFarm.name} · ${currentSeason().label}` : "Add a farm to track expenses"}
+          tone="foreground"
+        />
       </section>
 
       <div className="grid gap-5 lg:grid-cols-3">
         {/* Quick links */}
-        <section className="glass rounded-2xl p-5 lg:col-span-2">
+        <section className={`glass rounded-2xl p-5 ${alerts.length > 0 ? "lg:col-span-2" : "lg:col-span-3"}`}>
           <div className="mb-4 flex items-center justify-between">
             <h2 className="font-display text-sm font-semibold">Quick actions</h2>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className={`grid gap-3 sm:grid-cols-2 ${alerts.length > 0 ? "" : "lg:grid-cols-4"}`}>
             {[
               { to: "/expenses", label: "Expense Tracker", sub: "Log farm expenses", icon: Wallet },
               { to: "/market", label: "Market Prices", sub: "Check today's mandi rates", icon: LineChart },
@@ -290,7 +309,9 @@ function Dashboard() {
           </div>
         </section>
 
-        {/* Alerts */}
+        {/* Alert details: only when there is something to list (the count is
+            already in the Risk alerts card above). */}
+        {alerts.length > 0 && (
         <section className="glass rounded-2xl p-5">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="font-display text-sm font-semibold">Risk alerts</h2>
@@ -315,13 +336,9 @@ function Dashboard() {
                 </p>
               </div>
             ))}
-            {alerts.length === 0 && (
-              <div className="rounded-xl border border-dashed px-3.5 py-3 text-center text-xs text-muted-foreground">
-                No active alerts
-              </div>
-            )}
           </div>
         </section>
+        )}
       </div>
 
       {/* AI advisory + crop progress */}
@@ -393,7 +410,7 @@ function Dashboard() {
   );
 }
 
-function StatCard({ label, value, hint, tone, bar }) {
+function StatCard({ label, value, hint, tone, bar, to }) {
   const toneClass =
     tone === "primary"
       ? "text-primary"
@@ -402,13 +419,17 @@ function StatCard({ label, value, hint, tone, bar }) {
         : tone === "warning"
           ? "text-warning"
           : "text-foreground";
+  const Wrapper = to ? Link : "div";
   return (
-    <div className="glass hover-lift rounded-2xl p-5">
+    <Wrapper
+      {...(to ? { to } : {})}
+      className="glass hover-lift block rounded-2xl p-5 transition-colors hover:border-primary/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+    >
       <div className="flex items-center justify-between">
         <span className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
           {label}
         </span>
-        <ThermometerSun className="hidden" />
+        {to ? <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" /> : null}
       </div>
       <div className={`mt-2 font-display text-2xl font-bold ${toneClass}`}>{value}</div>
       <div className="mt-1 text-[11px] text-muted-foreground">{hint}</div>
@@ -420,6 +441,6 @@ function StatCard({ label, value, hint, tone, bar }) {
           />
         </div>
       )}
-    </div>
+    </Wrapper>
   );
 }

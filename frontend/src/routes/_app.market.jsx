@@ -38,8 +38,10 @@ function MarketPage() {
   // Filters — pre-seeded from userLocation stored in context
   const [commoditySearch, setCommoditySearch] = useState("");
   // No farm or saved location: show all states (no made-up default state).
-  const [stateFilter, setStateFilter] = useState(() => userLocation?.state || activeFarm?.location?.state || "");
-  const [districtFilter, setDistrictFilter] = useState(() => userLocation?.district || activeFarm?.location?.district || "");
+  // The ACTIVE FARM decides the location (same as Weather and the header);
+  // the last saved location is only a fallback when there is no farm.
+  const [stateFilter, setStateFilter] = useState(() => activeFarm?.location?.state || userLocation?.state || "");
+  const [districtFilter, setDistrictFilter] = useState(() => activeFarm?.location?.district || userLocation?.district || "");
   const [marketFilter, setMarketFilter] = useState("");
   const [sortOrder, setSortOrder] = useState("dateDesc");
   const [locationLoaded, setLocationLoaded] = useState(Boolean(userLocation?.state));
@@ -51,35 +53,23 @@ function MarketPage() {
   const [allCommodities, setAllCommodities] = useState(DEFAULT_CROPS);
   const [cropSearchQuery, setCropSearchQuery] = useState("");
 
-  // Attempt to auto-detect user's state and district from activeFarm
-  // Sync filters whenever userLocation in context changes (e.g. user just saved/updated a farm)
+  // Show the active farm's mandis, and switch when the farmer switches farm.
+  const activeFarmKey = activeFarm?._id || activeFarm?.id || null;
   useEffect(() => {
-    if (userLocation?.state && !locationLoaded) {
+    const loc = activeFarm?.location;
+    if (loc?.state) {
+      setStateFilter(loc.state);
+      setDistrictFilter(loc.district ? String(loc.district).replace(/ District/i, "") : "");
+      setMarketFilter("");
+      setLocationLoaded(true);
+    } else if (!activeFarmKey && userLocation?.state && !locationLoaded) {
+      // No farm yet: fall back to the saved location.
       setStateFilter(userLocation.state);
       if (userLocation.district) setDistrictFilter(userLocation.district);
       setLocationLoaded(true);
-    } else if (!locationLoaded && activeFarm?.location?.address) {
-      // Fallback geocode only if userLocation isn't set yet
-      (async () => {
-        try {
-          
-          const geoRes = await fetch(`${API_URL}/geocode?q=${encodeURIComponent(activeFarm.location.address)}&limit=1`);
-          if (geoRes.ok) {
-            const geoData = await geoRes.json();
-            if (geoData && (geoData.state || geoData.district)) {
-              if (geoData.state) setStateFilter(geoData.state);
-              const district = geoData.district || "";
-              if (district) setDistrictFilter(district.replace(/ District/i, ""));
-            }
-          }
-        } catch (err) {
-          console.error("Geocoding failed", err);
-        } finally {
-          setLocationLoaded(true);
-        }
-      })();
     }
-  }, [userLocation, activeFarm?.location?.address, locationLoaded]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeFarmKey, activeFarm?.location?.state, activeFarm?.location?.district]);
 
   // Fetch initial baseline data (States and Commodities)
   useEffect(() => {
