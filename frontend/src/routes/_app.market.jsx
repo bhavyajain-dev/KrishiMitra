@@ -37,8 +37,9 @@ function MarketPage() {
 
   // Filters — pre-seeded from userLocation stored in context
   const [commoditySearch, setCommoditySearch] = useState("");
-  const [stateFilter, setStateFilter] = useState(() => userLocation?.state || "Maharashtra");
-  const [districtFilter, setDistrictFilter] = useState(() => userLocation?.district || "");
+  // No farm or saved location: show all states (no made-up default state).
+  const [stateFilter, setStateFilter] = useState(() => userLocation?.state || activeFarm?.location?.state || "");
+  const [districtFilter, setDistrictFilter] = useState(() => userLocation?.district || activeFarm?.location?.district || "");
   const [marketFilter, setMarketFilter] = useState("");
   const [sortOrder, setSortOrder] = useState("dateDesc");
   const [locationLoaded, setLocationLoaded] = useState(Boolean(userLocation?.state));
@@ -372,7 +373,7 @@ Instructions:
                   onChange={(e) => { setStateFilter(e.target.value); setDistrictFilter(""); setMarketFilter(""); }}
                   className="w-full appearance-none rounded-xl border border-input bg-background pl-10 pr-4 py-2 text-sm outline-none focus:border-primary/50 transition-colors"
                 >
-                  <option value="">All States</option>
+                  <option value="">All India</option>
                   {["Andhra Pradesh","Assam","Bihar","Chhattisgarh","Gujarat","Haryana","Himachal Pradesh","Jharkhand","Karnataka","Kerala","Madhya Pradesh","Maharashtra","Odisha","Punjab","Rajasthan","Tamil Nadu","Telangana","Uttar Pradesh","Uttarakhand","West Bengal"].map(s => (
                     <option key={s} value={s}>{s}</option>
                   ))}
@@ -562,7 +563,7 @@ Instructions:
             <div className="p-5 border-b border-border/50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div>
                 <h2 className="text-lg font-display font-semibold">
-                  {isHistoryView ? `Previous Prices: ${marketFilter}` : `Latest Prices: ${districtFilter || stateFilter}`}
+                  {isHistoryView ? `Previous Prices: ${marketFilter}` : `Latest Prices: ${districtFilter || stateFilter || "All India"}`}
                 </h2>
                 <p className="text-xs text-muted-foreground">
                   {isHistoryView ? `Historical log of ${commoditySearch || 'crops'} in ${marketFilter}` : `Current daily prices across different mandis`}
