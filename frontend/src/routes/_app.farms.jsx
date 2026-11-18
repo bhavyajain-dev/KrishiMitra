@@ -482,29 +482,16 @@ function FarmsPage() {
       });
       if (res.ok) {
         const savedFarm = await res.json();
-        
-        if (formData.location) {
-          try {
-            const geoRes = await fetch(`${API_URL}/geocode?q=${encodeURIComponent(formData.location)}&limit=1`);
-            if (geoRes.ok) {
-              const geoData = await geoRes.json();
-              if (geoData && geoData.lat != null && geoData.lon != null) {
-                const city = geoData.city || "";
-                const state = geoData.state || "";
-                const district = geoData.district || "";
-                const lat = geoData.lat;
-                const lon = geoData.lon;
-                
-                setUserLocation({ query: formData.location, address: formData.location, city, state, district, lat, lon });
-                
-                await patchRecord(`/farms/${savedFarm._id || savedFarm.id}`, {
-                  location: { address: formData.location, city, state, district, lat, lon }
-                });
-              }
-            }
-          } catch (e) {
-            console.error("Geocoding during save failed", e);
-          }
+        // The server already looked up the address and stored lat/lon/state
+        // with the farm; reuse that instead of geocoding and saving again.
+        const loc = savedFarm?.location;
+        if (loc?.lat != null && loc?.lon != null) {
+          setUserLocation({
+            query: loc.address || formData.location, address: loc.address || formData.location,
+            city: loc.city || "", state: loc.state || "", district: loc.district || "", lat: loc.lat, lon: loc.lon,
+          });
+        } else if (formData.location) {
+          toast.warning("Saved, but we couldn't find that place on the map. Check the location spelling for local weather and recommendations.");
         }
 
         await fetchDashboardData();
@@ -977,9 +964,15 @@ function FarmsPage() {
                 <button
                   onClick={runAnalysisAndSave}
                   disabled={isAnalyzing}
-                  className="rounded-xl bg-cyan px-4 py-2.5 text-xs font-semibold text-cyan-foreground transition-transform hover:scale-[1.02] flex items-center justify-center min-w-[120px]"
+                  className="rounded-xl bg-primary px-4 py-2.5 text-xs font-semibold text-primary-foreground transition-transform hover:scale-[1.02] disabled:opacity-70 disabled:hover:scale-100 flex items-center justify-center gap-1.5 min-w-[120px]"
                 >
-                  {isAnalyzing ? "Processing..." : "Recommend"}
+                  {isAnalyzing ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" /> Analysing your farm…
+                    </>
+                  ) : (
+                    "Recommend"
+                  )}
                 </button>
               </div>
             </div>
