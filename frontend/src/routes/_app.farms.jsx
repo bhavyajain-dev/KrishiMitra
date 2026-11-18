@@ -222,7 +222,7 @@ function FarmsPage() {
       }
     } catch (err) {
       console.error("Network error:", err);
-      toast.error("Network error saving farm edit.");
+      toast.error(err instanceof TypeError ? "Couldn't reach the server. Check your internet and try again." : "Something went wrong saving the farm. Please try again.");
     } finally {
       setIsEditSubmitting(false);
     }
@@ -506,7 +506,7 @@ function FarmsPage() {
       }
     } catch (err) {
       console.error("Network error:", err);
-      toast.error("Network error saving farm.");
+      toast.error(err instanceof TypeError ? "Couldn't reach the server. Check your internet and try again." : "Something went wrong saving the farm. Please try again.");
     } finally {
       setIsSubmitting(false);
     }

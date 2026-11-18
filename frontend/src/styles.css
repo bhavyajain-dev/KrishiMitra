@@ -205,6 +205,16 @@
 
   html {
     scroll-behavior: smooth;
+    /* Same colour as the page, so iPhone's edge bounce never shows a
+       different (green) background. */
+    background-color: var(--color-background);
+    /* No rubber-band bounce / page "shaking" on two-finger swipes (iOS). */
+    overscroll-behavior: none;
+    /* Nothing may make the page wider than the screen; otherwise iPhone
+       lets the whole page slide sideways. `clip` keeps sticky headers working. */
+    overflow-x: clip;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
   }
 
   body {
@@ -212,6 +222,20 @@
     color: var(--color-foreground);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
+    overscroll-behavior: none;
+    overflow-x: clip;
+  }
+
+  /* iPhone Safari zooms into any form field whose text is under 16px and
+     doesn't zoom back out. Use 16px on iOS only (the rule below targets
+     iOS Safari), so other devices keep the compact design. Pinch-zoom stays
+     available for accessibility. */
+  @supports (-webkit-touch-callout: none) {
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+    select,
+    textarea {
+      font-size: max(16px, 1em) !important;
+    }
   }
 
   h1,
