@@ -141,6 +141,20 @@ function GoogleAuthSectionInner({ onSuccess, onError, disabled }) {
   // the look-alike placeholder underneath shows meanwhile.
   const [gisReady, setGisReady] = useState(false);
   const renderedRef = useRef(false);
+  // Google's button comes in a dark and a light style. Use the one that
+  // matches the site theme, and draw the placeholder in exactly the same
+  // style, so the swap from placeholder to real button can't be seen.
+  const [isDark, setIsDark] = useState(
+    () => typeof document !== "undefined" && document.documentElement.classList.contains("dark"),
+  );
+  useEffect(() => {
+    const root = document.documentElement;
+    const sync = () => setIsDark(root.classList.contains("dark"));
+    sync();
+    const observer = new MutationObserver(sync);
+    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
   const onSuccessRef = useRef(onSuccess);
   const onErrorRef = useRef(onError);
 
@@ -157,9 +171,10 @@ function GoogleAuthSectionInner({ onSuccess, onError, disabled }) {
       return;
     }
 
-    if (renderedRef.current && containerRef.current.hasChildNodes()) {
+    if (renderedRef.current === (isDark ? "dark" : "light") && containerRef.current.hasChildNodes()) {
       return;
     }
+    setGisReady(false);
 
     try {
       // Google inserts its button asynchronously, so this effect can run a
@@ -187,7 +202,7 @@ function GoogleAuthSectionInner({ onSuccess, onError, disabled }) {
 
       window.google.accounts.id.renderButton(containerRef.current, {
         type: "standard",
-        theme: "filled_black",
+        theme: isDark ? "filled_black" : "outline",
         size: "large",
         text: "continue_with",
         shape: "rectangular",
@@ -195,7 +210,7 @@ function GoogleAuthSectionInner({ onSuccess, onError, disabled }) {
         width: buttonWidth,
       });
 
-      renderedRef.current = true;
+      renderedRef.current = isDark ? "dark" : "light";
 
       const box = containerRef.current;
       const reveal = () => setTimeout(() => setGisReady(true), 350);
@@ -217,7 +232,7 @@ function GoogleAuthSectionInner({ onSuccess, onError, disabled }) {
     } catch (err) {
       console.error("[GoogleAuthSection] Failed to render Google button:", err);
     }
-  }, [scriptLoadedSuccessfully, clientId]);
+  }, [scriptLoadedSuccessfully, clientId, isDark]);
 
   if (!clientId) {
     return (
@@ -234,15 +249,20 @@ function GoogleAuthSectionInner({ onSuccess, onError, disabled }) {
       <div className={`relative w-full max-w-[340px] h-[40px] flex justify-center items-center ${
         disabled ? "opacity-50 pointer-events-none" : ""
       }`}>
-        {/* Instant zero-flash baseline placeholder */}
+        {/* Placeholder drawn like Google's own button (same theme), shown
+            until the real one has loaded on top of it. */}
         <div
           aria-hidden="true"
-          className="absolute inset-0 w-full h-[40px] rounded bg-[#131314] border border-[#31382F] flex items-center justify-center gap-3 px-4 pointer-events-none select-none z-0 shadow-sm"
+          className={`absolute inset-0 w-full h-[40px] rounded flex items-center pointer-events-none select-none z-0 overflow-hidden border ${
+            isDark ? "bg-[#131314] border-[#8E918F]" : "bg-white border-[#747775]"
+          }`}
         >
-          <div className="w-5 h-5 flex items-center justify-center shrink-0">
-            <GoogleIcon className="w-4 h-4" />
+          <div className={`h-full aspect-square flex items-center justify-center shrink-0 ${isDark ? "bg-white" : ""}`}>
+            <GoogleIcon className="w-[18px] h-[18px]" />
           </div>
-          <span className="text-[14px] font-medium text-white tracking-normal font-sans antialiased">
+          <span className={`flex-1 pr-10 text-center text-[14px] font-medium tracking-[0.25px] font-sans antialiased ${
+            isDark ? "text-[#E3E3E3]" : "text-[#1F1F1F]"
+          }`}>
             Continue with Google
           </span>
         </div>

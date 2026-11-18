@@ -1169,3 +1169,35 @@ class ProfileAndInputSafetyTests(TestCase):
         self.assertEqual(APIClient().post("/api/weather/cache", {"locationKey": "pune", "data": {}}, format="json").status_code, 401)
         self.assertEqual(self.A.post("/api/weather/cache", {"locationKey": "pune", "lat": "abc", "data": {}}, format="json").status_code, 400)
         self.assertEqual(self.A.post("/api/weather/cache", {"locationKey": "pune", "lat": 18.5, "lon": 73.8, "data": {}}, format="json").status_code, 200)
+
+
+class GoogleOnlyAccountLoginTests(TestCase):
+    def test_password_login_on_google_account_explains_google(self):
+        u = User.objects.create(username="g@example.test", email="g@example.test", phone="g_123", googleId="123", isVerified=True)
+        u.set_unusable_password()
+        u.save()
+        res = APIClient().post("/api/auth/login", {"email": "g@example.test", "password": "Whatever123!"}, format="json")
+        self.assertEqual(res.status_code, 401)
+        self.assertTrue(res.data.get("googleOnly"))
+        self.assertIn("Google", res.data["message"])
+
+
+class MarketStateNameTests(TestCase):
+    def setUp(self):
+        from krishi_core.models import MarketPrice
+        for st, dist, mk in [("Keralam", "Ernakulam", "Aluva"), ("Punjab", "Ludhiana", "Khanna"), ("NCT of Delhi", "Delhi", "Azadpur")]:
+            MarketPrice.objects.create(state=st, district=dist, market=mk, commodity="Banana", arrival_date="17/11/2026", modal_price=2000)
+
+    def test_states_use_one_display_name(self):
+        res = APIClient().get("/api/market/locations")
+        self.assertEqual(res.data["states"], ["Delhi", "Kerala", "Punjab"])
+
+    def test_filter_by_common_spelling_finds_data_spelling(self):
+        res = APIClient().get("/api/market/prices?state=Kerala")
+        self.assertEqual(len(res.data["records"]), 1)
+        self.assertEqual(len(APIClient().get("/api/market/history?state=Delhi").data["records"]), 1)
+
+    def test_market_yards_listed_for_district(self):
+        res = APIClient().get("/api/market/locations?state=Kerala&district=Ernakulam")
+        self.assertEqual(res.data["districts"], ["Ernakulam"])
+        self.assertEqual(res.data["markets"], ["Aluva"])
