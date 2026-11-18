@@ -72,6 +72,15 @@ export const Route = createFileRoute("/_app/crop-plan")({
 
 // Stage-to-major-activities mapping for display
 const STAGE_ACTIVITIES = {
+  "Pre-sowing Soil Correction": ["Review Soil Test", "Apply Amendments", "Basal Fertilizer"],
+  "Planting/Establishment": ["Planting", "First Irrigation", "Gap Filling", "Mulching"],
+  "Germination & Establishment": ["Check Emergence", "Light Irrigation", "Gap Filling", "Weed Control"],
+  "Germination & Early Growth": ["Check Emergence", "Light Irrigation", "First Weeding"],
+  "Flowering / Reproductive": ["Steady Moisture", "Pest Scouting", "Avoid Heavy Sprays"],
+  "Fruit / Grain Development": ["Steady Moisture", "Pest Scouting", "Top-up Nutrients"],
+  "Maturity & Pre-Harvest": ["Reduce Irrigation", "Check Maturity", "Plan Harvest"],
+  "Harvest & Post-Harvest": ["Harvest", "Drying", "Storage", "Sell at Mandi"],
+  "Harvesting": ["Harvest", "Drying", "Storage", "Sell at Mandi"],
   "Land Preparation":          ["Deep Ploughing", "FYM Application", "Levelling", "Soil Testing"],
   "Pit Preparation":           ["Pit Digging", "Compost Filling", "Drainage Layout"],
   "Sowing":                    ["Seed Treatment", "Sowing", "First Irrigation", "Gap Filling"],
@@ -458,7 +467,9 @@ function CropPlanPage() {
     return sortedMilestones.map((m, i) => {
       const start = toDayStart(m.plannedDate);
       const nextStart = sortedMilestones[i + 1]?.plannedDate ? toDayStart(sortedMilestones[i + 1].plannedDate) : null;
-      const end = nextStart ? new Date(nextStart.getTime() - oneDay) : (harvestDate ? toDayStart(harvestDate) : start);
+      let end = nextStart ? new Date(nextStart.getTime() - oneDay) : (harvestDate ? toDayStart(harvestDate) : start);
+      // Two stages on the same day (older plans) must never show "8 Nov - 7 Nov".
+      if (end < start) end = start;
       const stageTasks = planTasks.filter((task) => {
         const taskDate = toDayStart(task.date);
         return taskDate >= start && taskDate <= end;
@@ -483,6 +494,8 @@ function CropPlanPage() {
         gapDays: i === 0 ? 0 : dayDiff(sortedMilestones[i - 1].plannedDate, m.plannedDate),
         durationDays: Math.max(1, dayDiff(start, end) + 1),
         status,
+        // "Completed" only when the farmer marked it; otherwise it's just in the past.
+        confirmedDone: m.status === "done",
         tasks: stageTasks.length,
         tasksDone: stageTasksDone,
         majorTasks: majorTasks.length ? majorTasks : fallbackMajorTasks,

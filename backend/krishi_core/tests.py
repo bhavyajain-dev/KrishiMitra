@@ -1398,3 +1398,19 @@ class CropPlanGeneratorTests(TestCase):
         self.assertEqual(plan["cropName"], "Castor")
         self.assertTrue(plan["milestones"])
         self.assertTrue(res.data["result"]["tasks"])
+
+
+class CropPlanSoilCorrectionDateTests(TestCase):
+    def test_soil_correction_is_before_sowing(self):
+        from rest_framework_simplejwt.tokens import AccessToken
+        u = User.objects.create_user(username="h@example.test", email="h@example.test", phone="9000000071", password="TestPass123!x")
+        c = APIClient(); c.credentials(HTTP_AUTHORIZATION=f"Bearer {AccessToken.for_user(u)}")
+        farm = c.post("/api/farms", {"name": "F", "areaAcres": 1, "ph": 7, "nitrogen": 250}, format="json").data["id"]
+        fake_ai = {"fixes": "Add P and K.", "fertilizer_recommendation": "SSP", "add_as_task": True,
+                   "task_title": "Soil Correction", "task_description": "Apply SSP"}
+        with patch("krishi_core.services.ai_engine.llm_service.llm_service.generate_response", return_value=fake_ai):
+            res = c.post("/api/chat", {"message": "@cropPlan Generate a crop plan. Crop: Banana, Season: Rabi, Area: 1 acres.",
+                                       "farmId": farm, "forceJson": True}, format="json")
+        plan = res.data["result"]["cropPlan"]
+        corr = next(m for m in plan["milestones"] if m["stage"] == "Pre-sowing Soil Correction")
+        self.assertLess(corr["plannedDate"], plan["sowingDate"])

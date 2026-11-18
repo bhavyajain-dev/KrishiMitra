@@ -39,9 +39,11 @@ export function VerticalTimeline({ cropStages, stageTips, stageTipsLoading, stag
                 </div>
                 
                 <div className="flex flex-wrap gap-x-4 gap-y-2 mb-4 text-[11px] text-muted-foreground">
-                  <span className="flex items-center gap-1 font-medium"><CheckCircle2 className="w-3 h-3" /> {s.durationDays || "—"} days</span>
+                  <span className="flex items-center gap-1 font-medium"><CheckCircle2 className="w-3 h-3" /> {s.durationDays || "—"} {s.durationDays === 1 ? "day" : "days"}</span>
                   {isActive && <span className="font-bold text-primary flex items-center gap-1">● {stageProgress}% through</span>}
-                  {isDone && <span className="font-bold text-emerald-400">Completed ✓</span>}
+                  {isDone && (s.confirmedDone
+                    ? <span className="font-bold text-emerald-400">Completed ✓</span>
+                    : <span className="font-medium text-muted-foreground">Passed</span>)}
                 </div>
 
                 {/* Major activities / Objectives */}

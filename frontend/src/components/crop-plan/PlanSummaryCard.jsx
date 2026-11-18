@@ -7,20 +7,20 @@ export function PlanSummaryCard({ activePlan, durationDays, harvestDate, farmNam
   const data = [
     { label: "Crop", value: activePlan.cropName || "Not Available" },
     { label: "Farm Name", value: farmName || "Not Available" },
-    { label: "Area", value: activePlan.areaAcres ? `${activePlan.areaAcres} acres` : "Not Available" },
+    { label: "Area", value: activePlan.areaAcres ? `${activePlan.areaAcres} ${Number(activePlan.areaAcres) === 1 ? "acre" : "acres"}` : "Not Available" },
     { label: "Season", value: activePlan.season || "Not Available" },
     { label: "Harvest Date", value: harvestDate || "Not Available" },
     { label: "Crop Duration", value: durationDays ? `${durationDays} days` : "Not Available" },
   ];
 
   if (advancedPredictions?.yield) {
-    data.push({ label: "AI Yield Prediction", value: `${advancedPredictions.yield} t/ha` });
+    data.push({ label: "Yield prediction (ML model)", value: `${advancedPredictions.yield} t/ha` });
   }
   if (advancedPredictions?.fertilizer) {
-    data.push({ label: "AI Rec. Fertilizer", value: advancedPredictions.fertilizer });
+    data.push({ label: "Recommended fertilizer", value: advancedPredictions.fertilizer });
   }
   if (advancedPredictions?.irrigation) {
-    data.push({ label: "AI Irrigation Need", value: advancedPredictions.irrigation });
+    data.push({ label: "Irrigation need", value: advancedPredictions.irrigation });
   }
 
   return (

@@ -587,7 +587,7 @@ function FarmsPage() {
             </div>
 
             <div className="mt-4 grid grid-cols-2 gap-2.5 text-xs">
-              <InfoChip icon={Ruler} label="Area" value={`${f.areaAcres} acres`} />
+              <InfoChip icon={Ruler} label="Area" value={`${f.areaAcres} ${Number(f.areaAcres) === 1 ? "acre" : "acres"}`} />
               <InfoChip icon={Droplets} label="Water Source" value={Array.isArray(f.waterResources) && f.waterResources.length > 0 ? f.waterResources.join(', ') : "Rainfed"} />
               <InfoChip icon={Sprout} label="Crop" value={f.currentCrop || "None (fallow)"} />
               <InfoChip icon={Satellite} label="Soil" value={f.soilType ? f.soilType.charAt(0).toUpperCase() + f.soilType.slice(1) : "Other"} />
