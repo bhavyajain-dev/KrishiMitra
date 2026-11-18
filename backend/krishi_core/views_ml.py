@@ -235,6 +235,13 @@ Keep it conversational, encouraging, and formatted in plain text (no markdown fo
 
     @staticmethod
     def _rag_reason(collection, crop_name, ph):
+        # Crop-specific reason from the crop profile. (The knowledge-base
+        # search below isn't filtered by crop, so it returned the same generic
+        # "land preparation" note for every crop.)
+        from krishi_core.services.crop_profile import crop_reason
+        specific = crop_reason(crop_name, ph)
+        if specific:
+            return specific
         if ph is None:
             reason = f"{crop_name} suits your local climate and season."
         else:
