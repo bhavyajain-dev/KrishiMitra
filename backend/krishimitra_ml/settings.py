@@ -227,3 +227,7 @@ if not DEBUG:
 # ── Port Configuration ────────────────────────────────────────────────
 PORT = int(os.getenv("PORT", 5001))
 
+
+# AI Mitra chat can carry one attached photo as base64 JSON (the app shrinks
+# photos first; this is the ceiling). Leaf-scan uploads use multipart files.
+DATA_UPLOAD_MAX_MEMORY_SIZE = 8 * 1024 * 1024
