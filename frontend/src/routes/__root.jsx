@@ -15,6 +15,7 @@ import { ThemeProvider } from "../components/theme-provider";
 import { AppDataProvider } from "../lib/AppDataContext";
 import { Toaster } from "../components/ui/sonner";
 import { GoogleOAuthProvider } from "@react-oauth/google";
+import { API_URL } from "@/lib/api";
 
 function NotFoundComponent() {
   return (
@@ -148,6 +149,12 @@ function RootShell({ children }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+
+  // The free Render backend sleeps when idle. Ping it as soon as the site
+  // opens so it is awake by the time the visitor signs in or loads data.
+  useEffect(() => {
+    fetch(`${API_URL}/health`).catch(() => {});
+  }, []);
   const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
   const content = (
