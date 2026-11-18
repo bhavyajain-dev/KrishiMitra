@@ -1947,10 +1947,13 @@ Output ONLY a raw JSON object with this exact schema:
         }
         return Response({"result": result})
 
-    logger.info("chat: knowledge search %.1fs (skipped=%s)", _time.monotonic() - _t0, small_talk)
+    timings = {'search': round(_time.monotonic() - _t0, 2)}
+    logger.info("chat: knowledge search %.1fs (skipped=%s)", timings['search'], small_talk)
+    _c0 = _time.monotonic()
     farmer_context = _farmer_context(request.user, request.data.get('farmId'),
                                      request.data.get('weatherSnapshot'))
     history_text = _chat_history_text(request.user, session_id)
+    timings['context'] = round(_time.monotonic() - _c0, 2)
 
     # Save user message
     ChatMessage.objects.create(
@@ -2003,7 +2006,8 @@ Output ONLY a raw JSON object with this exact schema:
         # ── Tier 1: Google Gemini ─────────────────────────────────────────────
         _g0 = _time.monotonic()
         text_resp, gemini_model = gemini_generate(prompt_text, timeout=(4.0, 30.0), image=image_part)
-        logger.info("chat: gemini %.1fs (model=%s)", _time.monotonic() - _g0, gemini_model)
+        timings['gemini'] = round(_time.monotonic() - _g0, 2)
+        logger.info("chat: gemini %.1fs (model=%s)", timings['gemini'], gemini_model)
         if text_resp:
             provider_used = f"gemini:{gemini_model}"
             full_response = text_resp
@@ -2040,6 +2044,8 @@ Output ONLY a raw JSON object with this exact schema:
                 )
                 yield f"data: {json.dumps({'error': error_msg})}\n\n"
 
+        # SSE comment line (ignored by the app): where the time went.
+        yield f": timings {json.dumps(timings)} model={gemini_model}\n\n"
         yield "data: [DONE]\n\n"
 
         # Save AI response
