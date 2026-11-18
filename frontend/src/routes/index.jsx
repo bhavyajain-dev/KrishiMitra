@@ -62,7 +62,7 @@ function Landing() {
       </header>
 
       {/* Hero Section */}
-      <section className="relative flex flex-col items-center pt-48 pb-32 overflow-hidden px-6">
+      <section className="relative flex flex-col items-center pt-32 pb-16 sm:pt-48 sm:pb-32 overflow-hidden px-6">
         {/* Background */}
         <div className="absolute inset-0 z-0">
            <img 
@@ -75,29 +75,31 @@ function Landing() {
 
         <div className="relative z-10 w-full max-w-5xl flex flex-col items-center text-center">
           
-          <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-4 py-1.5 text-xs font-semibold text-primary mb-8 glow-emerald">
-             <div className="h-2 w-2 rounded-full bg-primary animate-pulse" />
-             Welcome to KrishiMitra: Your Smart Farming Assistant <ChevronRight className="h-3 w-3" />
+          <div className="inline-flex max-w-full items-center gap-2 whitespace-nowrap rounded-full border border-primary/30 bg-primary/10 px-4 py-1.5 text-xs font-semibold text-primary mb-8 glow-emerald">
+             <div className="h-2 w-2 shrink-0 rounded-full bg-primary animate-pulse" />
+             <span className="sm:hidden">Your Smart Farming Assistant</span>
+             <span className="hidden sm:inline">Welcome to KrishiMitra: Your Smart Farming Assistant</span>
+             <ChevronRight className="h-3 w-3 shrink-0" />
           </div>
 
-          <h1 className="font-display text-5xl sm:text-7xl font-bold tracking-tight text-foreground mb-6 leading-[1.1]">
+          <h1 className="font-display text-[2.35rem] sm:text-7xl font-bold tracking-tight text-foreground mb-6 leading-[1.1] text-balance">
             Intelligence that <br />
             <span className="text-primary italic pr-2">grows</span> with you.
           </h1>
 
-          <p className="text-muted-foreground text-lg sm:text-xl max-w-2xl mb-10">
+          <p className="text-muted-foreground text-base sm:text-xl max-w-2xl mb-10">
             The all-in-one platform for agricultural teams who want clarity, precision, and sustainable growth from soil to harvest.
           </p>
 
-          <Link to="/auth" className="rounded-full bg-primary text-background px-8 py-4 text-base font-bold transition-all hover:scale-105 glow-emerald flex items-center gap-2 mb-6">
-            Start Free Trial <ChevronRight className="h-5 w-5" />
+          <Link to="/auth" search={{ mode: "signup" }} className="rounded-full bg-primary text-background px-8 py-4 text-base font-bold transition-all hover:scale-105 glow-emerald flex items-center gap-2 mb-6">
+            Get Started Free <ChevronRight className="h-5 w-5" />
           </Link>
 
           {/* Removed trial badges per user request */}
         </div>
 
         {/* Floating Cards */}
-        <div className="relative z-10 w-full max-w-6xl mt-24 grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="relative z-10 w-full max-w-6xl mt-12 sm:mt-24 grid grid-cols-1 md:grid-cols-3 gap-6">
           
           {/* Card 1 */}
           <div className="glass-strong rounded-3xl p-8 hover:-translate-y-2 transition-transform duration-500">
@@ -177,7 +179,7 @@ function Landing() {
       </section>
 
       {/* Dashboard Preview Section */}
-      <section className="relative py-32 px-6 flex justify-center overflow-hidden">
+      <section className="relative py-12 sm:py-32 px-4 sm:px-6 flex justify-center overflow-hidden">
          {/* Background */}
         <div className="absolute inset-0 z-0">
            <img 
@@ -189,14 +191,14 @@ function Landing() {
         </div>
 
         {/* Glass Dashboard Panel */}
-        <div className="relative z-10 w-full max-w-5xl glass-strong rounded-[2.5rem] border border-foreground/20 p-8 sm:p-12 shadow-2xl overflow-hidden">
+        <div className="relative z-10 w-full max-w-5xl glass-strong rounded-[2.5rem] border border-foreground/20 p-5 sm:p-12 shadow-2xl overflow-hidden">
            
-           <div className="flex justify-between items-start mb-10">
+           <div className="flex flex-wrap justify-between items-start gap-4 mb-8 sm:mb-10">
               <div>
                  <div className="text-muted-foreground text-sm font-semibold uppercase tracking-wider mb-2">AI for Success Toolkit</div>
-                 <h2 className="text-4xl sm:text-5xl font-bold text-foreground tracking-tight">SUSTAINABLE <br/>GROWTH</h2>
+                 <h2 className="text-3xl sm:text-5xl font-bold text-foreground tracking-tight">SUSTAINABLE <br/>GROWTH</h2>
               </div>
-              <div className="flex items-center justify-center h-20 w-20 rounded-2xl border border-foreground/10 bg-background/30">
+              <div className="flex shrink-0 items-center justify-center h-20 w-20 rounded-2xl border border-foreground/10 bg-background/30">
                  <div className="relative flex items-center justify-center">
                     <svg className="w-16 h-16 transform -rotate-90">
                        <circle cx="32" cy="32" r="28" stroke="currentColor" strokeWidth="4" fill="transparent" className="text-foreground/10" />
@@ -246,7 +248,7 @@ function Landing() {
               <div className="rounded-2xl border border-foreground/10 bg-foreground/5 p-6 backdrop-blur-md md:col-span-2 flex flex-col sm:flex-row items-center justify-between gap-8">
                  <div className="flex-1">
                    <h4 className="text-foreground font-medium mb-2">Efficiency Score</h4>
-                   <div className="text-4xl font-bold text-foreground mb-2">22,91 <span className="text-primary text-lg">↑</span></div>
+                   <div className="text-4xl font-bold text-foreground mb-2">92.4 <span className="text-primary text-lg">↑</span></div>
                    <div className="flex items-end gap-1 h-12 mt-6">
                       {[30, 40, 20, 50, 60, 40, 70, 80, 60, 90, 70, 100, 80, 60, 40, 50].map((h, i) => (
                          <div key={i} className="w-2 rounded-t-sm bg-primary/80 transition-all hover:bg-primary" style={{ height: `${h}%` }} />
@@ -285,6 +287,17 @@ function Landing() {
         </div>
       </section>
 
+      {/* Footer */}
+      <footer className="border-t border-foreground/10 px-6 py-8">
+        <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-4 text-sm text-muted-foreground sm:flex-row">
+          <BrandMark />
+          <div className="flex items-center gap-5">
+            <Link to="/auth" search={{ mode: "login" }} className="hover:text-primary transition-colors">Log in</Link>
+            <Link to="/auth" search={{ mode: "signup" }} className="hover:text-primary transition-colors">Sign up</Link>
+          </div>
+          <p className="text-xs">© 2026 KrishiMitra · Smart farming for Indian farmers</p>
+        </div>
+      </footer>
     </div>
   );
 }
