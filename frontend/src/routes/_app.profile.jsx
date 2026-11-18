@@ -289,7 +289,7 @@ function ProfileSettingsPage() {
               <h3 className="truncate font-display text-xl font-bold">{userProfile?.name || "Farmer"}</h3>
             )}
             <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
-              <span>{userProfile?.email || "No email"}</span>
+              <span className="min-w-0 max-w-full break-all">{userProfile?.email || "No email"}</span>
               <span className="flex items-center gap-1">
                 <MapPin className="h-3 w-3" /> {farms[0]?.location?.address || "Location not set"}
               </span>
