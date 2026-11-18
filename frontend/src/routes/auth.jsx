@@ -185,6 +185,10 @@ function GoogleAuthSectionInner({ onSuccess, onError, disabled }) {
     }
 
     try {
+      // Google inserts its button asynchronously, so this effect can run a
+      // second time before the first button appears, drawing a duplicate
+      // (seen on phones). Clear the box first: only one button can exist.
+      containerRef.current.replaceChildren();
       window.google.accounts.id.initialize({
         client_id: clientId,
         callback: (credentialResponse) => {
@@ -198,7 +202,11 @@ function GoogleAuthSectionInner({ onSuccess, onError, disabled }) {
         use_fedcm_for_button: false,
       });
 
-      const buttonWidth = window.innerWidth < 400 ? 280 : 340;
+      // Match the button to its box so it fills the space on every screen.
+      // (A fixed 280/340 px left the placeholder's dark edges showing on
+      // phones.) Google allows 200-400 px.
+      const boxWidth = Math.floor(containerRef.current.getBoundingClientRect().width) || 340;
+      const buttonWidth = Math.max(200, Math.min(400, boxWidth));
 
       window.google.accounts.id.renderButton(containerRef.current, {
         type: "standard",
