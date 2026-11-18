@@ -1682,6 +1682,196 @@ def chat_stream(request):
         except Exception:
             logger.warning("Knowledge-base search failed", exc_info=True)
 
+    farm_id = request.data.get('farmId')
+
+    from datetime import datetime
+    datetime.now().strftime("%Y-%m-%d")
+
+    if force_json:
+        import re
+        import os
+        import pandas as pd
+        from datetime import datetime, timedelta
+
+        crop_match = re.search(r"Crop:\s*([^,]+)", user_msg, re.IGNORECASE)
+        season_match = re.search(r"Season:\s*([^,]+)", user_msg, re.IGNORECASE)
+
+        req_crop = crop_match.group(1).strip(
+        ).capitalize() if crop_match else "Soybean"
+        req_season = season_match.group(
+            1).strip() if season_match else "Kharif"
+
+        sowing_date_obj = datetime.now()
+        sowing_date_str = sowing_date_obj.strftime("%Y-%m-%d")
+
+        data_dir = os.path.join(settings.BASE_DIR, "krishi_core", "data")
+        tasks_csv = os.path.join(data_dir, "02_crop_task_calendar.csv")
+        fert_csv = os.path.join(data_dir, "06_crop_fertilizer_plan.csv")
+        profile_csv = os.path.join(data_dir, "01_crop_profile.csv")
+
+        milestones = []
+        tasks = []
+        irrigation_cycles = []
+        fertilizer_events = []
+        harvest_date_obj = sowing_date_obj + timedelta(days=100)  # Default
+
+        try:
+            # 1. Load data
+            df_tasks = pd.read_csv(tasks_csv)
+            df_fert = pd.read_csv(fert_csv)
+            df_prof = pd.read_csv(profile_csv)
+
+            # Filter for crop
+            crop_tasks = df_tasks[df_tasks['crop_name'].str.lower(
+            ) == req_crop.lower()]
+            crop_fert = df_fert[df_fert['crop_name'].str.lower()
+                                == req_crop.lower()]
+            crop_prof = df_prof[df_prof['crop_name'].str.lower()
+                                == req_crop.lower()]
+
+            if not crop_prof.empty:
+                harvest_days = crop_prof.iloc[0].get('harvest_days', 100)
+                harvest_date_obj = sowing_date_obj + \
+                    timedelta(days=int(harvest_days))
+
+            if not crop_tasks.empty:
+                # Group by stage to create milestones
+                stages = crop_tasks['stage'].unique()
+                for stage in stages:
+                    stage_tasks = crop_tasks[crop_tasks['stage'] == stage]
+                    start_day = stage_tasks['day_from_sowing_start'].min()
+                    end_day = stage_tasks['day_from_sowing_end'].max()
+                    start_date = sowing_date_obj + \
+                        timedelta(days=int(start_day))
+
+                    milestones.append({
+                        "stage": stage,
+                        "plannedDate": start_date.strftime("%Y-%m-%d"),
+                        "description": f"Expected duration around {int(end_day - start_day)} days."
+                    })
+
+                # Create detailed tasks
+                for _, row in crop_tasks.iterrows():
+                    start_day = int(row['day_from_sowing_start'])
+                    task_date = sowing_date_obj + timedelta(days=start_day)
+
+                    tasks.append({
+                        "title": row['task'],
+                        "date": task_date.strftime("%Y-%m-%d"),
+                        "category": row['task_category'].lower().replace(' ', '_'),
+                        "priority": row['priority'].lower(),
+                        "description": row['description']
+                    })
+
+                    if "irrigat" in row['task_category'].lower(
+                    ) or "irrigat" in row['task'].lower():
+                        irrigation_cycles.append({
+                            "day": start_day,
+                            "method": "As per profile",
+                            "duration": row['description']
+                        })
+
+            if not crop_fert.empty:
+                # Inject basic fertilizer doses as tasks
+                for _, row in crop_fert.iterrows():
+                    stage = row['stage'].lower()
+                    # Determine approx day
+                    day_offset = 0
+                    if "basal" in stage:
+                        day_offset = 0
+                    elif "top-dress 1" in stage:
+                        day_offset = 30
+                    elif "top-dress 2" in stage:
+                        day_offset = 60
+
+                    task_date = sowing_date_obj + timedelta(days=day_offset)
+
+                    tasks.append({
+                        "title": f"Apply Fertilizer ({row['stage']})",
+                        "date": task_date.strftime("%Y-%m-%d"),
+                        "category": "fertilizer",
+                        "priority": "high",
+                        "description": f"{row['products_and_dose']} - {row['purpose']}"
+                    })
+                    fertilizer_events.append({
+                        "day": day_offset,
+                        "type": "Specific",
+                        "amount": row['products_and_dose']
+                    })
+                    
+            # 2. Add AI-driven Soil Fixes & Smart Fertilizer Suggestions
+            try:
+                from .services.ai_engine.llm_service import llm_service
+                
+                farm = Farm.objects.filter(id=farm_id, owner=request.user).first() if str(farm_id or '').isdigit() else None
+                if farm and (farm.ph or farm.nitrogen or farm.ec):
+                    if not crop_prof.empty:
+                        prof = crop_prof.iloc[0]
+                        ideal_soil_text = (f"{prof.get('texture', 'loamy')} soil, {prof.get('drainage', 'good')} drainage, "
+                                           f"pH {prof.get('ideal_ph_min', 6.0)}-{prof.get('ideal_ph_max', 7.5)}")
+                    else:
+                        ideal_soil_text = "well drained, neutral pH"
+                    
+                    prompt = f"""
+You are an expert agronomist. 
+We are creating a crop plan for {req_crop}. The ideal soil condition for this crop is: {ideal_soil_text}.
+The user's farm soil test report shows:
+pH: {farm.ph or 'Unknown'}
+Nitrogen: {farm.nitrogen or 'Unknown'} kg/ha
+Phosphorus: {farm.phosphorus or 'Unknown'} kg/ha
+Potassium: {farm.potassium or 'Unknown'} kg/ha
+Organic Carbon: {farm.organicCarbon or 'Unknown'} %
+EC: {farm.ec or 'Unknown'} dS/m
+
+Output ONLY a raw JSON object with this exact schema:
+{{
+  "fixes": "A short, actionable paragraph explaining exactly what needs to be fixed to reach ideal conditions for {req_crop}.",
+  "fertilizer_recommendation": "A specific fertilizer suggestion based on the deficiencies.",
+  "add_as_task": true,
+  "task_title": "Soil Correction & Pre-sowing Fertilization",
+  "task_description": "Short summary of the fertilizer action required."
+}}
+"""
+                    ai_response = llm_service.generate_response(prompt)
+                    if isinstance(ai_response, dict) and not "error" in ai_response:
+                        milestones.insert(0, {
+                            "stage": "Pre-sowing Soil Correction",
+                            "plannedDate": sowing_date_str,
+                            "description": ai_response.get("fixes", "Adjust soil nutrients before sowing.")
+                        })
+                        fertilizer_events.append({
+                            "day": 0,
+                            "type": "Custom AI Recommendation",
+                            "amount": ai_response.get("fertilizer_recommendation", "Apply standard NPK basal dose.")
+                        })
+                        if ai_response.get("add_as_task"):
+                            tasks.append({
+                                "title": ai_response.get("task_title", "Soil Correction"),
+                                "date": sowing_date_str,
+                                "category": "fertilizer",
+                                "priority": "high",
+                                "description": ai_response.get("task_description", "Apply recommended fertilizers to correct soil profile.")
+                            })
+            except Exception as e:
+                print(f"Error calling LLM for soil fixes: {e}")
+
+        except Exception as e:
+            print(f"Error parsing pandas plan: {e}")
+
+        result = {
+            "cropPlan": {
+                "cropName": req_crop,
+                "season": req_season,
+                "sowingDate": sowing_date_str,
+                "expectedHarvestDate": harvest_date_obj.strftime("%Y-%m-%d"),
+                "milestones": milestones,
+                "irrigationCycles": irrigation_cycles,
+                "fertilizerEvents": fertilizer_events
+            },
+            "tasks": tasks
+        }
+        return Response({"result": result})
+
     timings = {'search': round(_time.monotonic() - _t0, 2)}
     try:
         from .services.kb_search import stats as _kb_stats
