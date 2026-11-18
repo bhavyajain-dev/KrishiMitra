@@ -163,6 +163,10 @@ function GoogleAuthSection(props) {
 function GoogleAuthSectionInner({ onSuccess, onError, disabled }) {
   const { clientId, scriptLoadedSuccessfully } = useGoogleOAuth();
   const containerRef = useRef(null);
+  // Google's iframe draws a temporary layout while loading (visible as a
+  // second, offset button on phones). Keep it invisible until it has loaded;
+  // the look-alike placeholder underneath shows meanwhile.
+  const [gisReady, setGisReady] = useState(false);
   const renderedRef = useRef(false);
   const onSuccessRef = useRef(onSuccess);
   const onErrorRef = useRef(onError);
@@ -219,6 +223,24 @@ function GoogleAuthSectionInner({ onSuccess, onError, disabled }) {
       });
 
       renderedRef.current = true;
+
+      const box = containerRef.current;
+      const reveal = () => setTimeout(() => setGisReady(true), 350);
+      const watchIframe = (frame) => frame.addEventListener("load", reveal, { once: true });
+      const existing = box.querySelector("iframe");
+      if (existing) {
+        watchIframe(existing);
+      } else {
+        const observer = new MutationObserver(() => {
+          const frame = box.querySelector("iframe");
+          if (frame) {
+            observer.disconnect();
+            watchIframe(frame);
+          }
+        });
+        observer.observe(box, { childList: true, subtree: true });
+      }
+      setTimeout(() => setGisReady(true), 4000); // never stay hidden
     } catch (err) {
       console.error("[GoogleAuthSection] Failed to render Google button:", err);
     }
@@ -255,7 +277,9 @@ function GoogleAuthSectionInner({ onSuccess, onError, disabled }) {
         {/* Live Google Identity Services button container (renders directly in place) */}
         <div
           ref={containerRef}
-          className="relative z-10 w-full h-[40px] flex justify-center items-center"
+          className={`relative z-10 w-full h-[40px] flex justify-center items-center transition-opacity duration-200 ${
+            gisReady ? "opacity-100" : "opacity-0"
+          }`}
         />
       </div>
     </div>
