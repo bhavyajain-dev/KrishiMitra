@@ -1956,6 +1956,12 @@ def chat_history(request, sid):
     return Response(data)
 
 
+
+def _is_page_weather(d):
+    """The cache stores the Weather page's format: current + daily + hourly."""
+    return (isinstance(d, dict) and isinstance(d.get('current'), dict)
+            and isinstance(d.get('daily'), list) and isinstance(d.get('hourly'), list))
+
 @api_view(['GET'])
 @permission_classes([permissions.AllowAny])
 def weather_cache_get(request, key):
@@ -1966,6 +1972,10 @@ def weather_cache_get(request, key):
         age_seconds = (timezone.now() - dt).total_seconds() if dt else 0
         age_minutes = max(0, int(age_seconds // 60))
         source = 'cache' if age_minutes < 60 else 'stale'
+        if not _is_page_weather(cache.data):
+            # Old entry in another format (it crashed the Weather page):
+            # treat as not cached; the page fetches live and overwrites it.
+            return Response({'data': None, 'source': 'none', 'locationKey': key})
         data = WeatherCacheSerializer(cache).data
         data['source'] = source
         data['ageMinutes'] = age_minutes
@@ -1988,6 +1998,8 @@ def weather_cache_set(request):
     payload = request.data.get('data', {})
     if not isinstance(payload, dict) or len(json.dumps(payload, default=str)) > 300000:
         return Response({'error': 'data must be a weather object'}, status=400)
+    if not _is_page_weather(payload):
+        return Response({'error': 'data must include current, daily and hourly weather'}, status=400)
     coords = {}
     for name, bound in (('lat', 90), ('lon', 180)):
         raw = request.data.get(name)

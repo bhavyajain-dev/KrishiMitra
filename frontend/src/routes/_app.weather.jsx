@@ -6,6 +6,11 @@ import { useAppData } from "@/lib/AppDataContext";
 import { PageHeader } from "@/components/app/AppShell";
 import { setAiHandoff } from "@/lib/aiHandoff";
 
+/** Weather in the shape this page draws (current + daily + hourly lists). */
+function isUsableWeather(d) {
+  return !!d && !!d.current && typeof d.current === "object" && Array.isArray(d.daily) && Array.isArray(d.hourly);
+}
+
 export const Route = createFileRoute("/_app/weather")({
   head: () => ({
     meta: [
@@ -307,7 +312,7 @@ function WeatherPage() {
       );
       if (cacheRes.ok) {
         const cached = await cacheRes.json();
-        if (cached.data) {
+        if (isUsableWeather(cached.data)) {
           setLocationData(prev => ({
             ...prev,
             [loc.id]: { cityName: cached.cityName, ...cached.data, lat: cached.lat, lon: cached.lon },
@@ -451,7 +456,9 @@ function WeatherPage() {
     if (activeId === id) setActiveId(locations[0]?.id);
   };
 
-  const active = locationData[activeId];
+  // Only render weather that has every part the page draws; anything else
+  // (e.g. an old cache entry in another format) counts as not loaded yet.
+  const active = isUsableWeather(locationData[activeId]) ? locationData[activeId] : null;
   const activeError = locationErrors[activeId];
   const hour = new Date().getHours();
 
@@ -808,7 +815,7 @@ Instructions:
                 <div className="text-right text-white">
                   <div className="font-display text-6xl font-bold leading-none">{active.current.temp ?? "--"}°</div>
                   <div className="mt-2 text-sm text-white/80">
-                    H:{active.daily[0]?.hi}° • L:{active.daily[0]?.lo}°
+                    H:{active.daily[0]?.hi ?? "--"}° • L:{active.daily[0]?.lo ?? "--"}°
                   </div>
                 </div>
               </div>

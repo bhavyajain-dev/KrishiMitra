@@ -81,13 +81,8 @@ function Dashboard() {
           alerts: data.alerts || []
         };
         setWeatherSnapshot(current);
-
-        // Persist to cache
-        await fetch(`${API_URL}/weather/cache`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ locationKey, cityName: address, lat, lon, data }),
-        });
+        // Not saved to the shared weather cache: that cache holds the Weather
+        // page's format, and writing the raw API format here broke that page.
       } catch (e) { console.error("Dashboard live weather fetch failed", e); }
     };
 
@@ -96,7 +91,8 @@ function Dashboard() {
     })
       .then(r => r.ok ? r.json() : null)
       .then(cached => {
-        if (cached?.data?.current) {
+        // Use the cache only if it's in the Weather page's format.
+        if (cached?.data?.current && cached.data.current.temp != null && Array.isArray(cached.data.daily)) {
           setWeatherSnapshot({
             temp: cached.data.current.temp,
             humidity: cached.data.current.humidity,
