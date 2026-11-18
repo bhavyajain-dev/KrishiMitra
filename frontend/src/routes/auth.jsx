@@ -253,9 +253,9 @@ function GoogleAuthSectionInner({ onSuccess, onError, disabled }) {
             until the real one has loaded on top of it. */}
         <div
           aria-hidden="true"
-          className={`absolute inset-0 w-full h-[40px] rounded flex items-center pointer-events-none select-none z-0 overflow-hidden border ${
+          className={`absolute inset-0 w-full h-[40px] rounded flex items-center pointer-events-none select-none z-0 overflow-hidden border transition-opacity duration-150 ${
             isDark ? "bg-[#131314] border-[#8E918F]" : "bg-white border-[#747775]"
-          }`}
+          } ${gisReady ? "opacity-0" : "opacity-100"}`}
         >
           <div className={`h-full aspect-square flex items-center justify-center shrink-0 ${isDark ? "bg-white" : ""}`}>
             <GoogleIcon className="w-[18px] h-[18px]" />
