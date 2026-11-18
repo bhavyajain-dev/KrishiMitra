@@ -91,8 +91,10 @@ const validatePasswordPolicy = (pwd) => {
 
 const getApiUrl = () => API_URL;
 
-// Resilient fetch wrapper with client-side abort timeout
-async function fetchWithTimeout(url, options = {}, timeoutMs = 12000) {
+// Resilient fetch wrapper with client-side abort timeout.
+// 60 s: the free Render backend sleeps when idle and takes ~15-50 s to wake,
+// so a shorter timeout made the first sign-in/sign-up after a quiet period fail.
+async function fetchWithTimeout(url, options = {}, timeoutMs = 60000) {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -224,7 +226,11 @@ function GoogleAuthSectionInner({ onSuccess, onError, disabled }) {
 
   return (
     <div className="w-full flex justify-center py-0.5">
-      <div className="relative w-full max-w-[340px] h-[40px] flex justify-center items-center">
+      {/* Fade the whole button (placeholder + Google iframe) together; fading
+          only the iframe let the placeholder show through as a ghost label. */}
+      <div className={`relative w-full max-w-[340px] h-[40px] flex justify-center items-center ${
+        disabled ? "opacity-50 pointer-events-none" : ""
+      }`}>
         {/* Instant zero-flash baseline placeholder */}
         <div
           aria-hidden="true"
@@ -241,9 +247,7 @@ function GoogleAuthSectionInner({ onSuccess, onError, disabled }) {
         {/* Live Google Identity Services button container (renders directly in place) */}
         <div
           ref={containerRef}
-          className={`relative z-10 w-full h-[40px] flex justify-center items-center ${
-            disabled ? "opacity-50 pointer-events-none" : ""
-          }`}
+          className="relative z-10 w-full h-[40px] flex justify-center items-center"
         />
       </div>
     </div>
