@@ -250,6 +250,47 @@ def auth_login(request):
     return Response({'token': token, 'user': serializer.data})
 
 
+
+def _verify_google_access_token(access_token, client_id):
+    """Check a Google OAuth access token with Google and return its identity.
+
+    The token must have been issued to *our* client ID; otherwise a token
+    obtained by some other app for the same Google user could be replayed
+    here to log in as them. Returns (claims, None) or (None, error Response).
+    """
+    unavailable = Response({'message': 'Google sign-in is temporarily unavailable. Please try again '
+                                       'or sign in with your email and password.'}, status=503)
+    try:
+        info_resp = requests.post('https://oauth2.googleapis.com/tokeninfo',
+                                  data={'access_token': access_token}, timeout=(4, 10))
+    except requests.RequestException:
+        logger.warning("Google tokeninfo request failed", exc_info=True)
+        return None, unavailable
+    if info_resp.status_code != 200:
+        return None, Response({'message': 'Invalid or expired Google sign-in. Please try again.'}, status=401)
+    info = info_resp.json()
+    if client_id not in (info.get('aud'), info.get('azp')):
+        logger.warning("Google access token issued for another client was rejected.")
+        return None, Response({'message': 'This Google sign-in was not issued for KrishiMitra.'}, status=401)
+
+    claims = {
+        'sub': info.get('sub'),
+        'email': info.get('email'),
+        'email_verified': str(info.get('email_verified', '')).lower() == 'true',
+    }
+    # Name and photo (optional; login works without them).
+    try:
+        prof = requests.get('https://openidconnect.googleapis.com/v1/userinfo',
+                            headers={'Authorization': f'Bearer {access_token}'}, timeout=(4, 10))
+        if prof.status_code == 200:
+            p = prof.json()
+            if p.get('sub') and p.get('sub') != claims['sub']:
+                return None, Response({'message': 'Invalid Google sign-in.'}, status=401)
+            claims.update({k: p.get(k) for k in ('given_name', 'family_name', 'name', 'picture') if p.get(k)})
+    except requests.RequestException:
+        logger.info("Google userinfo unavailable; continuing without profile name", exc_info=True)
+    return claims, None
+
 @api_view(['POST'])
 @permission_classes([permissions.AllowAny])
 def auth_google(request):
@@ -259,35 +300,42 @@ def auth_google(request):
     Uses Google 'sub' as the permanent federated identity.
     Automatically links verified Google identity to existing user account with matching email.
     """
-    credential = request.data.get('credential') or request.data.get('idToken') or request.data.get('token')
+    credential = _text(request.data.get('credential') or request.data.get('idToken'))
+    access_token = _text(request.data.get('accessToken'))
 
-    if not credential:
+    if not credential and not access_token:
         return Response({'message': 'Google credential is required.'}, status=400)
 
     client_id = getattr(settings, 'GOOGLE_CLIENT_ID', '') or os.getenv('GOOGLE_CLIENT_ID', '')
     if not client_id:
         return Response({'message': 'Google authentication is not configured on the server.'}, status=500)
 
-    try:
-        from google.oauth2 import id_token
-        from google.auth.transport import requests as google_requests
+    if access_token:
+        # Token from the Google sign-in popup (our own styled button).
+        idinfo, error = _verify_google_access_token(access_token, client_id)
+        if error:
+            return error
+    else:
+        try:
+            from google.oauth2 import id_token
+            from google.auth.transport import requests as google_requests
 
-        idinfo = id_token.verify_oauth2_token(
-            credential,
-            google_requests.Request(),
-            client_id
-        )
-    except ValueError as e:
-        logger.error("Google ID token verification failed: %s", e)
-        return Response({'message': 'Invalid or expired Google credential.'}, status=401)
-    except Exception as e:
-        logger.error("Google auth exception: %s", e, exc_info=True)
-        return Response({'message': 'Google authentication service is temporarily unavailable. Please try again or sign in with your email and password.'}, status=500)
+            idinfo = id_token.verify_oauth2_token(
+                credential,
+                google_requests.Request(),
+                client_id
+            )
+        except ValueError as e:
+            logger.error("Google ID token verification failed: %s", e)
+            return Response({'message': 'Invalid or expired Google credential.'}, status=401)
+        except Exception as e:
+            logger.error("Google auth exception: %s", e, exc_info=True)
+            return Response({'message': 'Google authentication service is temporarily unavailable. Please try again or sign in with your email and password.'}, status=500)
 
-    # 1. Verify Issuer
-    issuer = idinfo.get('iss')
-    if issuer not in ['accounts.google.com', 'https://accounts.google.com']:
-        return Response({'message': f'Invalid token issuer: {issuer}'}, status=401)
+        # 1. Verify Issuer
+        issuer = idinfo.get('iss')
+        if issuer not in ['accounts.google.com', 'https://accounts.google.com']:
+            return Response({'message': f'Invalid token issuer: {issuer}'}, status=401)
 
     # 2. Extract Google Claims
     google_id = idinfo.get('sub')

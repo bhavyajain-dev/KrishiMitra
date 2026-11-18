@@ -19,7 +19,7 @@ import {
   ArrowLeft,
   TrendingUp,
 } from "lucide-react";
-import { GoogleOAuthProvider, useGoogleOAuth } from "@react-oauth/google";
+import { GoogleOAuthProvider, useGoogleOAuth, useGoogleLogin } from "@react-oauth/google";
 
 import { BrandMark, ThemeToggle } from "@/components/app/AppShell";
 import { useAppData } from "@/lib/AppDataContext";
@@ -132,150 +132,53 @@ function GoogleAuthSection(props) {
   return <GoogleAuthSectionInner {...props} />;
 }
 
-// Reusable Google Auth Section with Idempotent Initialization and Zero Layout Shifts
+// Our own "Continue with Google" button, styled like the rest of the site.
+// (Google's ready-made button is drawn inside Google's frame and can't be
+// restyled.) Clicking it opens Google's official sign-in popup; the backend
+// verifies the returned token with Google before logging in.
 function GoogleAuthSectionInner({ onSuccess, onError, disabled }) {
-  const { clientId, scriptLoadedSuccessfully } = useGoogleOAuth();
-  const containerRef = useRef(null);
-  // Google's iframe draws a temporary layout while loading (visible as a
-  // second, offset button on phones). Keep it invisible until it has loaded;
-  // the look-alike placeholder underneath shows meanwhile.
-  const [gisReady, setGisReady] = useState(false);
-  const renderedRef = useRef(false);
-  // Google's button comes in a dark and a light style. Use the one that
-  // matches the site theme, and draw the placeholder in exactly the same
-  // style, so the swap from placeholder to real button can't be seen.
-  const [isDark, setIsDark] = useState(
-    () => typeof document !== "undefined" && document.documentElement.classList.contains("dark"),
-  );
-  useEffect(() => {
-    const root = document.documentElement;
-    const sync = () => setIsDark(root.classList.contains("dark"));
-    sync();
-    const observer = new MutationObserver(sync);
-    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
-    return () => observer.disconnect();
-  }, []);
-  const onSuccessRef = useRef(onSuccess);
-  const onErrorRef = useRef(onError);
+  const { scriptLoadedSuccessfully } = useGoogleOAuth();
+  const [opening, setOpening] = useState(false);
 
-  useEffect(() => {
-    onSuccessRef.current = onSuccess;
-  }, [onSuccess]);
+  const login = useGoogleLogin({
+    flow: "implicit",
+    scope: "openid email profile",
+    onSuccess: (resp) => {
+      setOpening(false);
+      if (resp?.access_token) onSuccess(resp.access_token);
+      else onError("Google sign-in finished, but Google sent no token. Please try again.");
+    },
+    onError: () => {
+      setOpening(false);
+      onError("Google sign-in was cancelled or failed. Please try again.");
+    },
+    onNonOAuthError: (err) => {
+      setOpening(false);
+      if (err?.type === "popup_closed") return; // user closed the popup: nothing to report
+      onError(
+        err?.type === "popup_failed_to_open"
+          ? "Your browser blocked the Google popup. Allow pop-ups for this site and try again."
+          : "Google sign-in could not start. Please try again.",
+      );
+    },
+  });
 
-  useEffect(() => {
-    onErrorRef.current = onError;
-  }, [onError]);
-
-  useEffect(() => {
-    if (!scriptLoadedSuccessfully || !window.google?.accounts?.id || !containerRef.current) {
-      return;
-    }
-
-    if (renderedRef.current === (isDark ? "dark" : "light") && containerRef.current.hasChildNodes()) {
-      return;
-    }
-    setGisReady(false);
-
-    try {
-      // Google inserts its button asynchronously, so this effect can run a
-      // second time before the first button appears, drawing a duplicate
-      // (seen on phones). Clear the box first: only one button can exist.
-      containerRef.current.replaceChildren();
-      window.google.accounts.id.initialize({
-        client_id: clientId,
-        callback: (credentialResponse) => {
-          if (credentialResponse?.credential) {
-            onSuccessRef.current?.(credentialResponse.credential);
-          } else {
-            onErrorRef.current?.("Google sign-in completed, but no ID token was returned.");
-          }
-        },
-        auto_select: false,
-        use_fedcm_for_button: false,
-      });
-
-      // Match the button to its box so it fills the space on every screen.
-      // (A fixed 280/340 px left the placeholder's dark edges showing on
-      // phones.) Google allows 200-400 px.
-      const boxWidth = Math.floor(containerRef.current.getBoundingClientRect().width) || 340;
-      const buttonWidth = Math.max(200, Math.min(400, boxWidth));
-
-      window.google.accounts.id.renderButton(containerRef.current, {
-        type: "standard",
-        theme: isDark ? "filled_black" : "outline",
-        size: "large",
-        text: "continue_with",
-        shape: "rectangular",
-        logo_alignment: "left",
-        width: buttonWidth,
-      });
-
-      renderedRef.current = isDark ? "dark" : "light";
-
-      const box = containerRef.current;
-      const reveal = () => setTimeout(() => setGisReady(true), 350);
-      const watchIframe = (frame) => frame.addEventListener("load", reveal, { once: true });
-      const existing = box.querySelector("iframe");
-      if (existing) {
-        watchIframe(existing);
-      } else {
-        const observer = new MutationObserver(() => {
-          const frame = box.querySelector("iframe");
-          if (frame) {
-            observer.disconnect();
-            watchIframe(frame);
-          }
-        });
-        observer.observe(box, { childList: true, subtree: true });
-      }
-      setTimeout(() => setGisReady(true), 4000); // never stay hidden
-    } catch (err) {
-      console.error("[GoogleAuthSection] Failed to render Google button:", err);
-    }
-  }, [scriptLoadedSuccessfully, clientId, isDark]);
-
-  if (!clientId) {
-    return (
-      <div className="rounded-xl border border-dashed border-border bg-surface-2 p-3 text-center text-xs text-muted-foreground min-h-[40px] flex items-center justify-center">
-        Google Sign-In requires <code className="font-mono text-primary ml-1">VITE_GOOGLE_CLIENT_ID</code>.
-      </div>
-    );
-  }
+  const busy = disabled || opening || !scriptLoadedSuccessfully;
 
   return (
-    <div className="w-full flex justify-center py-0.5">
-      {/* Fade the whole button (placeholder + Google iframe) together; fading
-          only the iframe let the placeholder show through as a ghost label. */}
-      <div className={`relative w-full max-w-[340px] h-[40px] flex justify-center items-center ${
-        disabled ? "opacity-50 pointer-events-none" : ""
-      }`}>
-        {/* Placeholder drawn like Google's own button (same theme), shown
-            until the real one has loaded on top of it. */}
-        <div
-          aria-hidden="true"
-          className={`absolute inset-0 w-full h-[40px] rounded flex items-center pointer-events-none select-none z-0 overflow-hidden border transition-opacity duration-150 ${
-            isDark ? "bg-[#131314] border-[#8E918F]" : "bg-white border-[#747775]"
-          } ${gisReady ? "opacity-0" : "opacity-100"}`}
-        >
-          <div className={`h-full aspect-square flex items-center justify-center shrink-0 ${isDark ? "bg-white" : ""}`}>
-            <GoogleIcon className="w-[18px] h-[18px]" />
-          </div>
-          <span className={`flex-1 pr-10 text-center text-[14px] font-medium tracking-[0.25px] font-sans antialiased ${
-            isDark ? "text-[#E3E3E3]" : "text-[#1F1F1F]"
-          }`}>
-            Continue with Google
-          </span>
-        </div>
-
-        {/* Live Google Identity Services button container (renders directly in place) */}
-        <div
-          ref={containerRef}
-          className={`relative z-10 w-full h-[40px] flex justify-center items-center transition-opacity duration-200 ${
-            gisReady ? "opacity-100" : "opacity-0"
-          }`}
-        />
-      </div>
-    </div>
+    <button
+      type="button"
+      onClick={() => {
+        setOpening(true);
+        login();
+      }}
+      disabled={busy}
+      aria-busy={opening}
+      className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-border bg-surface px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-surface-2 focus:outline-none focus:ring-2 focus:ring-primary/25 disabled:cursor-not-allowed disabled:opacity-60"
+    >
+      {opening ? <Loader2 className="h-4 w-4 animate-spin" /> : <GoogleIcon className="h-[18px] w-[18px]" />}
+      <span>{opening ? "Opening Google…" : "Continue with Google"}</span>
+    </button>
   );
 }
 
@@ -928,7 +831,7 @@ function AuthPage() {
       const res = await fetchWithTimeout(`${API_URL}/auth/google`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ credential: idToken }),
+        body: JSON.stringify({ accessToken: idToken }),
       });
       const data = await res.json().catch(() => ({}));
 
