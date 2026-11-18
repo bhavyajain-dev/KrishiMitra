@@ -1377,3 +1377,24 @@ class WeatherCacheFormatTests(TestCase):
         res = APIClient().get("/api/weather/cache/surat-gujarat")
         self.assertEqual(res.status_code, 200)
         self.assertIsNone(res.data["data"])
+
+
+class CropPlanGeneratorTests(TestCase):
+    """The Crop Plan page's "Generate Plan" uses /api/chat with forceJson and
+    must get a JSON plan back (not the streamed chat reply)."""
+
+    def test_force_json_returns_crop_plan(self):
+        from rest_framework_simplejwt.tokens import AccessToken
+        u = User.objects.create_user(username="g@example.test", email="g@example.test", phone="9000000061", password="TestPass123!x")
+        c = APIClient(); c.credentials(HTTP_AUTHORIZATION=f"Bearer {AccessToken.for_user(u)}")
+        farm = c.post("/api/farms", {"name": "F", "areaAcres": 2, "ph": 7, "nitrogen": 250}, format="json").data["id"]
+        with patch("krishi_core.views.gemini_generate", return_value=(None, None)):
+            res = c.post("/api/chat", {
+                "message": "@cropPlan Generate a crop plan. Crop: Castor, Season: Rabi 2026–27, Area: 1 acres, Irrigation: Rainfed.",
+                "sessionId": "s-plan", "farmId": farm, "forceJson": True}, format="json")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res["Content-Type"], "application/json")
+        plan = res.data["result"]["cropPlan"]
+        self.assertEqual(plan["cropName"], "Castor")
+        self.assertTrue(plan["milestones"])
+        self.assertTrue(res.data["result"]["tasks"])
