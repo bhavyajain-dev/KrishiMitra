@@ -1022,3 +1022,31 @@ class MarketSyncBulkUpsertTests(TestCase):
             sync_daily_market_data()
         self.assertEqual(MarketPrice.objects.count(), 2)
         self.assertEqual(MarketPrice.objects.get(commodity="Wheat").modal_price, 2600)
+
+
+class ImportMarketCsvTests(TestCase):
+    """import_market_csv loads a data.gov.in CSV download (x0020 headers)."""
+
+    def test_imports_datagov_csv(self):
+        import os
+        import tempfile
+        from django.core.management import call_command
+        from krishi_core.models import MarketPrice
+
+        rows = (
+            "State,District,Market,Commodity,Variety,Grade,Arrival_Date,"
+            "Min_x0020_Price,Max_x0020_Price,Modal_x0020_Price\n"
+            "Punjab,Ludhiana,Khanna,Wheat,Dara,FAQ,18/11/2026,2300,2500,2400\n"
+            "Gujarat,Anand,Anand APMC,Cotton,Other,FAQ,18/11/2026,6800,7200,7000\n"
+            "Punjab,Ludhiana,Khanna,Wheat,Dara,FAQ,18/11/2026,2300,2550,2450\n"
+        )
+        with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False) as f:
+            f.write(rows)
+            path = f.name
+        try:
+            call_command("import_market_csv", path)
+        finally:
+            os.unlink(path)
+        self.assertEqual(MarketPrice.objects.count(), 2)
+        self.assertEqual(MarketPrice.objects.get(commodity="Wheat").modal_price, 2450)
+        self.assertEqual(MarketPrice.objects.get(commodity="Cotton").state, "Gujarat")
