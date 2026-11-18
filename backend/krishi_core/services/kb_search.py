@@ -109,6 +109,7 @@ def search(query, crop=None, stage_specific=False, limit=6, per_collection=3, mi
     return out
 
 
-def warm_up():
-    """Build the index in the background at startup so the first chat is fast."""
-    threading.Thread(target=_get_index, name="kb-index", daemon=True).start()
+# NOTE: no background warm-up thread. Building the index in a thread at
+# startup imported numpy/sklearn while the first request imported pandas,
+# and the concurrent half-finished numpy import broke every request
+# ("partially initialized module 'numpy'"). The index is built on first use.

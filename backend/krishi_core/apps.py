@@ -27,11 +27,6 @@ class KrishiCoreConfig(AppConfig):
 
     def ready(self):
         from django.conf import settings
-        if _is_server_process():
-            # Build AI Mitra's knowledge-base index in the background so the
-            # first chat after a restart doesn't pay for it.
-            from .services.kb_search import warm_up
-            warm_up()
         # Only run jobs if the scheduler is explicitly enabled AND this process
         # is a real server (previously this checked RUN_MAIN only, which is set
         # by runserver's reloader and never by gunicorn, so jobs never ran in
