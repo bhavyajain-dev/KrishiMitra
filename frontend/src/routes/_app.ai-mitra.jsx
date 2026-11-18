@@ -164,6 +164,33 @@ function Markdown({ text }) {
   );
 }
 
+/** Resize an image file to fit maxSide px and return a JPEG data URL. */
+function shrinkImage(file, maxSide, quality) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+        canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+        canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      } catch (err) {
+        reject(err);
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("unreadable image"));
+    };
+    img.src = url;
+  });
+}
+
 function FormattedText({ text }) {
   const lines = text.split("\n");
   const out = [];
@@ -1196,17 +1223,31 @@ function AiMitraPage() {
     isAtBottomRef.current = distanceToBottom < 120;
   }, []);
 
-  const handleFileChange = (e) => {
+  const handleFileChange = async (e) => {
     const file = e.target.files?.[0];
+    e.target.value = null;
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error("Image must be smaller than 5MB");
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please attach a photo (JPEG, PNG or WEBP).");
       return;
     }
-    const reader = new FileReader();
-    reader.onload = (event) => setAttachedImage(event.target.result);
-    reader.readAsDataURL(file);
-    e.target.value = null;
+    if (file.size > 15 * 1024 * 1024) {
+      toast.error("Image must be smaller than 15 MB");
+      return;
+    }
+    try {
+      // Phone photos are often 3–8 MB; shrink to ~1280 px JPEG so the upload
+      // is quick on mobile data. The AI doesn't need more detail than that.
+      setAttachedImage(await shrinkImage(file, 1280, 0.85));
+    } catch {
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error("Couldn't read this photo. Try a JPEG or PNG under 5 MB.");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (event) => setAttachedImage(event.target.result);
+      reader.readAsDataURL(file);
+    }
   };
 
   useEffect(() => {

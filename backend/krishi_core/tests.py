@@ -1245,3 +1245,102 @@ class GoogleAccessTokenLoginTests(TestCase):
         res = self._post(self._resp(200, {"aud": "our-client.apps.googleusercontent.com", "sub": "g-2",
                                           "email": "x@example.test", "email_verified": "false"}))
         self.assertEqual(res.status_code, 400)
+
+
+class SyncPlanAreaAndReplaceTests(TestCase):
+    def setUp(self):
+        from rest_framework_simplejwt.tokens import AccessToken
+        self.u = User.objects.create_user(username="p@example.test", email="p@example.test", phone="9000000031", password="TestPass123!x")
+        self.c = APIClient()
+        self.c.credentials(HTTP_AUTHORIZATION=f"Bearer {AccessToken.for_user(self.u)}")
+        self.farm = self.c.post("/api/farms", {"name": "F", "areaAcres": 3.5}, format="json").data["id"]
+        self.plan = {"cropPlan": {"cropName": "Fennel", "season": "Rabi 2026–27", "sowingDate": "2026-11-18",
+                                  "expectedHarvestDate": "2027-04-17", "milestones": [{"name": "Sow"}]}}
+
+    def test_area_is_saved(self):
+        from krishi_core.models import CropPlan
+        res = self.c.post("/api/chat/sync-plan", {"farmId": self.farm, "syncData": self.plan, "areaAcres": 2.5}, format="json")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(CropPlan.objects.get(farm_id=self.farm).areaAcres, 2.5)
+
+    def test_replace_retires_old_plan_and_keep_does_not(self):
+        from krishi_core.models import CropPlan
+        self.c.post("/api/chat/sync-plan", {"farmId": self.farm, "syncData": self.plan, "areaAcres": 1}, format="json")
+        self.c.post("/api/chat/sync-plan", {"farmId": self.farm, "syncData": self.plan, "areaAcres": 1, "replace": False}, format="json")
+        self.assertEqual(CropPlan.objects.filter(farm_id=self.farm, status="active").count(), 2)
+        self.c.post("/api/chat/sync-plan", {"farmId": self.farm, "syncData": self.plan, "areaAcres": 1, "replace": True}, format="json")
+        self.assertEqual(CropPlan.objects.filter(farm_id=self.farm, status="active").count(), 1)
+
+
+class FarmFilterTests(TestCase):
+    def test_expenses_list_filters_by_farm(self):
+        from rest_framework_simplejwt.tokens import AccessToken
+        u = User.objects.create_user(username="f@example.test", email="f@example.test", phone="9000000041", password="TestPass123!x")
+        c = APIClient(); c.credentials(HTTP_AUTHORIZATION=f"Bearer {AccessToken.for_user(u)}")
+        f1 = c.post("/api/farms", {"name": "A", "areaAcres": 1}, format="json").data["id"]
+        f2 = c.post("/api/farms", {"name": "B", "areaAcres": 1}, format="json").data["id"]
+        for f in (f1, f2):
+            c.post("/api/expenses", {"farm": f, "label": "x", "category": "seeds", "amountRs": 10}, format="json")
+        self.assertEqual(len(c.get(f"/api/expenses?farm={f1}").data), 1)
+        self.assertEqual(len(c.get("/api/expenses").data), 2)
+        self.assertEqual(len(c.get("/api/expenses?farm=abc").data), 0)
+        exp = c.get(f"/api/expenses?farm={f1}").data[0]["id"]
+        self.assertEqual(c.delete(f"/api/expenses/{exp}").status_code, 204)
+
+
+class ChatContextTests(TestCase):
+    """AI Mitra gets the farmer's own data, the conversation and any photo."""
+
+    def setUp(self):
+        from rest_framework_simplejwt.tokens import AccessToken
+        self.u = User.objects.create_user(username="c@example.test", email="c@example.test", phone="9000000051", password="TestPass123!x")
+        self.c = APIClient()
+        self.c.credentials(HTTP_AUTHORIZATION=f"Bearer {AccessToken.for_user(self.u)}")
+        self.farm = self.c.post("/api/farms", {"name": "Nashik Plot", "areaAcres": 3.5, "soilType": "black", "ph": 7.8,
+                                               "location": {"address": "Nashik", "city": "Nashik", "state": "Maharashtra",
+                                                            "lat": 20.0, "lon": 73.8}}, format="json").data["id"]
+        self.c.post("/api/chat/sync-plan", {"farmId": self.farm, "areaAcres": 2.5, "syncData": {"cropPlan": {
+            "cropName": "Fennel", "season": "Rabi 2026–27", "sowingDate": "2026-11-18",
+            "expectedHarvestDate": "2027-04-17", "milestones": []}}}, format="json")
+
+    def _chat(self, payload):
+        captured = {}
+
+        def fake_generate(prompt, **kw):
+            captured["prompt"], captured["image"] = prompt, kw.get("image")
+            return "Advice.", "test-model"
+
+        with patch("krishi_core.views.gemini_generate", side_effect=fake_generate):
+            res = self.c.post("/api/chat", payload, format="json")
+            body = b"".join(res.streaming_content).decode() if hasattr(res, "streaming_content") else ""
+        return res, body, captured
+
+    def test_prompt_includes_farm_plan_and_history(self):
+        self._chat({"message": "What should I do this week?", "sessionId": "s1", "farmId": self.farm})
+        res, body, cap = self._chat({"message": "And next week?", "sessionId": "s1", "farmId": self.farm,
+                                     "weatherSnapshot": {"temp": 24, "rainChance": 10}})
+        self.assertEqual(res.status_code, 200)
+        p = cap["prompt"]
+        for expected in ("Nashik Plot", "Fennel", "18 Nov 2026", "pH 7.8", "What should I do this week?", "temperature 24°C"):
+            self.assertIn(expected, p)
+
+    def test_photo_only_message_is_sent_to_gemini(self):
+        res, body, cap = self._chat({"message": "", "sessionId": "s2", "imageBase64": "data:image/jpeg;base64,/9j/AAAA"})
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(cap["image"], ("image/jpeg", "/9j/AAAA"))
+        self.assertIn("Advice.", body)
+
+    def test_bad_photo_is_rejected(self):
+        res, _, _ = self._chat({"message": "hi", "imageBase64": "data:text/html;base64,PHNjcmlwdD4="})
+        self.assertEqual(res.status_code, 400)
+
+    def test_other_users_farm_is_not_used(self):
+        from rest_framework_simplejwt.tokens import AccessToken
+        other = User.objects.create_user(username="o@example.test", email="o@example.test", phone="9000000052", password="TestPass123!x")
+        c2 = APIClient(); c2.credentials(HTTP_AUTHORIZATION=f"Bearer {AccessToken.for_user(other)}")
+        captured = {}
+        with patch("krishi_core.views.gemini_generate", side_effect=lambda p, **k: (captured.setdefault("p", p), "ok")[1:] and ("ok", "m")):
+            res = c2.post("/api/chat", {"message": "hi", "farmId": self.farm}, format="json")
+            b"".join(res.streaming_content)
+        self.assertNotIn("Nashik Plot", captured["p"])
+        self.assertIn("has not added a farm", captured["p"])

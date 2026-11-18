@@ -65,7 +65,13 @@ class OwnerViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return self.queryset.filter(owner=self.request.user)
+        qs = self.queryset.filter(owner=self.request.user)
+        # ?farm=<id> narrows farm-linked lists (expenses, alerts, ...) to one
+        # farm, so per-farm totals don't mix data from the user's other farms.
+        farm_id = self.request.query_params.get('farm') if self.action == 'list' else None
+        if farm_id and any(f.name == 'farm' for f in qs.model._meta.fields):
+            qs = qs.filter(farm_id=farm_id) if str(farm_id).isdigit() else qs.none()
+        return qs
 
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
@@ -1554,15 +1560,90 @@ def synthesize_contextual_advisory(user_msg):
     return None
 
 
+
+def _chat_image(value):
+    """Validate an attached chat photo sent as a data URL.
+    Returns ((mime, base64), None), (None, None) when absent, or (None, error)."""
+    if not value:
+        return None, None
+    if not isinstance(value, str) or not value.startswith('data:image/') or ';base64,' not in value:
+        return None, 'The attached photo must be a JPEG, PNG or WEBP image.'
+    header, data = value.split(',', 1)
+    mime = header[5:].split(';', 1)[0].lower()
+    if mime not in ('image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'):
+        return None, 'The attached photo must be a JPEG, PNG or WEBP image.'
+    if len(data) > 7_000_000:  # ~5 MB image
+        return None, 'The photo is too large. Please attach an image under 5 MB.'
+    return (mime, data), None
+
+
+def _farmer_context(user, farm_id=None, weather=None):
+    """Plain-text summary of the farmer's own data for the AI prompt."""
+    today = timezone.localdate()
+    lines = [f"Today's date: {today:%d %B %Y}."]
+    farms = Farm.objects.filter(owner=user, isActive=True)
+    chosen = farms.filter(id=int(farm_id)).first() if str(farm_id or '').isdigit() else None
+    farm_list = [chosen] if chosen else list(farms.order_by('-updated_at')[:3])
+    if not farm_list:
+        lines.append("The farmer has not added a farm yet.")
+    for f in farm_list:
+        loc = f.location or {}
+        place = ", ".join(x for x in (loc.get('city') or loc.get('district'), loc.get('state')) if x) \
+            or loc.get('address') or "location not set"
+        soil_vals = [(n, v) for n, v in (("pH", f.ph), ("N", f.nitrogen), ("P", f.phosphorus),
+                                         ("K", f.potassium), ("OC %", f.organicCarbon), ("EC", f.ec)) if v is not None]
+        soil = ", ".join(f"{n} {v:g}" for n, v in soil_vals) or "not provided"
+        water = ", ".join(f.waterResources or []) or "rainfed"
+        lines.append(f"Farm '{f.name}': {f.areaAcres:g} acres in {place}; {f.soilType} soil; "
+                     f"water: {water} ({f.waterLevel} availability); soil test (N/P/K kg/ha): {soil}.")
+        if f.currentCrop:
+            lines.append(f"  Current crop noted by farmer: {f.currentCrop}.")
+        for plan in CropPlan.objects.filter(owner=user, farm=f, status='active').order_by('-created_at')[:2]:
+            sow = timezone.localtime(plan.sowingDate).date()
+            harvest = timezone.localtime(plan.expectedHarvestDate).date()
+            day = (today - sow).days
+            when = (f"day {day} of about {(harvest - sow).days}" if day >= 0
+                    else f"sowing planned in {-day} days")
+            lines.append(f"  Active crop plan: {plan.cropName} ({plan.season}) on {plan.areaAcres:g} acres, "
+                         f"sown {sow:%d %b %Y}, {when}, expected harvest {harvest:%d %b %Y}.")
+    if isinstance(weather, dict):
+        bits = []
+        for key, label, unit in (("temp", "temperature", "°C"), ("humidity", "humidity", "%"),
+                                 ("rainChance", "rain chance today", "%"), ("wind", "wind", " km/h")):
+            v = weather.get(key)
+            if isinstance(v, (int, float)) and not isinstance(v, bool):
+                bits.append(f"{label} {v:g}{unit}")
+        if bits:
+            lines.append("Live weather at the farm: " + ", ".join(bits) + ".")
+    return "\n".join(lines)
+
+
+def _chat_history_text(user, session_id, limit=6):
+    msgs = list(ChatMessage.objects.filter(owner=user, sessionId=session_id)
+                .order_by('-created_at')[:limit])[::-1]
+    out = []
+    for m in msgs:
+        who = "Farmer" if m.role == 'user' else "AI Mitra"
+        text = " ".join((m.content or "").split())
+        out.append(f"{who}: {text[:600]}{'…' if len(text) > 600 else ''}")
+    return "\n".join(out)
+
 @api_view(['POST'])
 @permission_classes([permissions.IsAuthenticated])
 @throttle_classes([AIRateThrottle])
 def chat_stream(request):
     """Streams a chat response from Google Gemini, with knowledge-base fallbacks."""
     raw_msg = request.data.get('message')
-    if raw_msg is None or not isinstance(raw_msg, str) or not raw_msg.strip():
+    image_part, image_error = _chat_image(request.data.get('imageBase64'))
+    if image_error:
+        return Response({'error': image_error}, status=400)
+    if (raw_msg is None or not isinstance(raw_msg, str) or not raw_msg.strip()) and not image_part:
         return Response({'error': 'A non-empty "message" string is required.'}, status=400)
-    user_msg = raw_msg.strip()
+    if raw_msg is not None and not isinstance(raw_msg, str):
+        return Response({'error': 'A non-empty "message" string is required.'}, status=400)
+    user_msg = (raw_msg or '').strip() or (
+        "Look at this crop photo. Identify the crop and any disease, pest or nutrient problem, "
+        "and tell me how to treat it.")
     if len(user_msg) > 8000:
         return Response({'error': 'Message is too long. Please keep it under 8000 characters.'}, status=400)
     session_id = request.data.get('sessionId') or 'default'
@@ -1581,6 +1662,14 @@ def chat_stream(request):
             pooled_results = []
             main_col = ml_loader.state.get("collection")
             ef = main_col._embedding_function if main_col else None
+            # Embed the question once and reuse it for every collection
+            # (embedding is the slow part on a small server).
+            try:
+                query_embedding = [list(map(float, ef([user_msg])[0]))] if ef else None
+            except Exception:
+                query_embedding = None
+            query_kw = ({'query_embeddings': query_embedding} if query_embedding
+                        else {'query_texts': [user_msg]})
 
             # Detect known crops in user query
             known_crops = [
@@ -1627,7 +1716,7 @@ def chat_stream(request):
                             else:
                                 # Stage-specific query: run semantic ranking on this crop
                                 qres = col.query(
-                                    query_texts=[user_msg],
+                                    **query_kw,
                                     where={'crop': detected_crop},
                                     n_results=min(col.count(), 6)
                                 )
@@ -1639,7 +1728,7 @@ def chat_stream(request):
                         pass
                 else:
                     res = col.query(
-                        query_texts=[user_msg], n_results=min(
+                        **query_kw, n_results=min(
                             col.count(), 3))
                     if res.get("documents") and len(res["documents"]) > 0:
                         docs = res["documents"][0]
@@ -1850,12 +1939,16 @@ Output ONLY a raw JSON object with this exact schema:
         }
         return Response({"result": result})
 
+    farmer_context = _farmer_context(request.user, request.data.get('farmId'),
+                                     request.data.get('weatherSnapshot'))
+    history_text = _chat_history_text(request.user, session_id)
+
     # Save user message
     ChatMessage.objects.create(
         owner=request.user,
         sessionId=session_id,
         role='user',
-        content=user_msg
+        content=user_msg if not image_part else f"[Photo attached] {user_msg}"
     )
 
     def generate():
@@ -1882,6 +1975,16 @@ Output ONLY a raw JSON object with this exact schema:
             "When the user's question includes real-time context (such as live weather conditions, APMC mandi prices, crop growth stages, or soil data), "
             "synthesize your recommendations directly from that contextual data. Answer concisely with clear headings and bullet points.\n\n"
         )
+        system_prompt += (
+            "FARMER'S ACCOUNT DATA (real data from their KrishiMitra account; use it, and do not ask "
+            "for details already listed here, such as the sowing date of an active crop plan):\n"
+            f"{farmer_context}\n\n"
+        )
+        if history_text:
+            system_prompt += f"CONVERSATION SO FAR (for follow-up questions):\n{history_text}\n\n"
+        if image_part:
+            system_prompt += ("The farmer attached a photo. Base your answer on what is actually visible; "
+                              "if it is not a plant or is unclear, say so and ask for a clearer close-up of the affected leaf.\n\n")
 
         prompt_text = f"{system_prompt}User Question: {user_msg}\nAnswer concisely:"
 
@@ -1889,7 +1992,7 @@ Output ONLY a raw JSON object with this exact schema:
         provider_used = None
 
         # ── Tier 1: Google Gemini ─────────────────────────────────────────────
-        text_resp, gemini_model = gemini_generate(prompt_text, timeout=(4.0, 30.0))
+        text_resp, gemini_model = gemini_generate(prompt_text, timeout=(4.0, 30.0), image=image_part)
         if text_resp:
             provider_used = f"gemini:{gemini_model}"
             full_response = text_resp
@@ -1978,8 +2081,10 @@ def chat_sync_plan(request):
             m['status'] = m.get('status', 'pending')
             m['notes'] = m.get('notes', '')
 
+        area = plan_data.get('areaAcres') or request.data.get('areaAcres') or 1.0
         serializer = CropPlanSerializer(data={
             'farm': farm.id,
+            'areaAcres': area,
             'cropName': plan_data.get('cropName') or 'Unknown Crop',
             'season': plan_data.get('season') or 'Unknown',
             'sowingDate': plan_data.get('sowingDate') or '2025-01-01',
@@ -1993,7 +2098,11 @@ def chat_sync_plan(request):
         }, context={'request': request})
         if not serializer.is_valid():
             return Response({'message': 'Invalid crop plan.', 'errors': serializer.errors}, status=400)
-        plan_obj = serializer.save(owner=request.user)
+        with transaction.atomic():
+            if request.data.get('replace') is True:
+                # "Replace current plan": retire the farm's active plans.
+                CropPlan.objects.filter(owner=request.user, farm=farm, status='active').update(status='abandoned')
+            plan_obj = serializer.save(owner=request.user)
 
     return Response({'success': True})
 

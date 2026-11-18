@@ -2,7 +2,7 @@ import { currentSeason } from "@/lib/season";
 import { API_URL } from "@/lib/api";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Plus, TrendingUp, Wallet, AlertCircle } from "lucide-react";
+import { Plus, TrendingUp, Wallet, AlertCircle, Trash2 } from "lucide-react";
 import { useAppData } from "@/lib/AppDataContext";
 import { PageHeader } from "@/components/app/AppShell";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
@@ -115,6 +115,29 @@ function ExpensesPage() {
       toast.error("Error adding expense");
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const [deletingId, setDeletingId] = useState(null);
+  const handleDelete = async (x) => {
+    const id = x._id || x.id;
+    if (typeof window !== "undefined" && !window.confirm(`Delete "${x.label}" (₹${formatRs(x.amountRs || 0)})?`)) return;
+    setDeletingId(id);
+    try {
+      const res = await fetch(`${API_URL}/expenses/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok || res.status === 404) {
+        setExpenses((prev) => prev.filter((e) => (e._id || e.id) !== id));
+        toast.success("Expense deleted");
+      } else {
+        toast.error("Could not delete the expense. Please try again.");
+      }
+    } catch {
+      toast.error("Could not reach the server. Please try again.");
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -290,10 +313,20 @@ function ExpensesPage() {
                         </div>
                       </div>
                     </div>
-                    <div className="shrink-0 text-right">
+                    <div className="flex shrink-0 items-center gap-1.5 text-right">
                       <span className="font-display text-sm font-bold">
                         ₹{formatRs(x.amountRs || x.amount || 0)}
                       </span>
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(x)}
+                        disabled={deletingId === (x._id || x.id)}
+                        aria-label={`Delete expense ${x.label}`}
+                        title="Delete expense"
+                        className="grid h-8 w-8 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
                     </div>
                   </div>
                 );

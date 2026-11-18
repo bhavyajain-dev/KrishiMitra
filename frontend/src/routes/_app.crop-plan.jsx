@@ -1,4 +1,5 @@
 import { API_URL } from "@/lib/api";
+import { currentSeason } from "@/lib/season";
 import { createFileRoute } from "@tanstack/react-router";
 import { CalendarRange, CheckCircle2, Flag, Sparkles, Sprout, Droplets, FlaskConical, AlertTriangle, Eye } from "lucide-react";
 import { useState, useEffect, useCallback, useMemo } from "react";
@@ -266,10 +267,9 @@ function CropPlanPage() {
 
     const month = new Date().getMonth();
     const year = new Date().getFullYear();
-    let computedSeason = "Zaid";
-    if (month >= 5 && month <= 9) computedSeason = "Kharif";
-    else if (month >= 10 || month <= 2) computedSeason = "Rabi";
-    computedSeason = `${computedSeason} ${year}`;
+    // Same season names as the rest of the app (e.g. "Rabi 2026–27").
+    let computedSeason = `Zaid ${year}`;
+    if (month <= 2 || month >= 5) computedSeason = currentSeason().label;
     
     const area = aiForm.areaAcres;
     const irrigation = activeFarm?.waterResources?.length > 0 ? activeFarm.waterResources.join(', ') : "Rainfed";
@@ -322,7 +322,7 @@ function CropPlanPage() {
       const res = await fetch(`${API_URL}/chat/sync-plan`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ syncData: previewPlan, farmId: activeFarmId, replace })
+        body: JSON.stringify({ syncData: previewPlan, farmId: activeFarmId, replace, areaAcres: aiForm.areaAcres })
       });
       
       if (!res.ok) {
@@ -891,12 +891,20 @@ Please analyze this stage of growth and provide actionable advice on:
                 );
               })()}
               <div className="mt-6 flex flex-col gap-2">
-                <button onClick={() => handleSavePreview(true)} disabled={isSaving} className="w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-md hover:opacity-90 disabled:opacity-60">
-                  {isSaving ? "Saving..." : "Replace Current Plan"}
-                </button>
-                <button onClick={() => handleSavePreview(false)} disabled={isSaving} className="w-full rounded-lg border border-primary text-primary px-4 py-2.5 text-sm font-semibold hover:bg-primary/10 disabled:opacity-60">
-                  {isSaving ? "Saving..." : "Keep Existing Plan (Add New)"}
-                </button>
+                {cropPlans.some((p) => p.status === "active") ? (
+                  <>
+                    <button onClick={() => handleSavePreview(true)} disabled={isSaving} className="w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-md hover:opacity-90 disabled:opacity-60">
+                      {isSaving ? "Saving..." : "Replace Current Plan"}
+                    </button>
+                    <button onClick={() => handleSavePreview(false)} disabled={isSaving} className="w-full rounded-lg border border-primary text-primary px-4 py-2.5 text-sm font-semibold hover:bg-primary/10 disabled:opacity-60">
+                      {isSaving ? "Saving..." : "Keep Existing Plan (Add New)"}
+                    </button>
+                  </>
+                ) : (
+                  <button onClick={() => handleSavePreview(false)} disabled={isSaving} className="w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-md hover:opacity-90 disabled:opacity-60">
+                    {isSaving ? "Saving..." : "Save Plan"}
+                  </button>
+                )}
                 <button type="button" onClick={() => setPreviewPlan(null)} disabled={isSaving} className="w-full rounded-lg px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-secondary disabled:opacity-60">
                   Discard
                 </button>
@@ -965,6 +973,10 @@ Please analyze this stage of growth and provide actionable advice on:
               />
               <AiFarmAdvisor
                 cropName={activePlan?.cropName}
+                stageName={activeStage?.stage}
+                stageTips={stageTips}
+                lat={activeFarm?.location?.lat ?? null}
+                lon={activeFarm?.location?.lon ?? null}
                 onConsultAi={handleConsultAiMitra}
               />
             </div>

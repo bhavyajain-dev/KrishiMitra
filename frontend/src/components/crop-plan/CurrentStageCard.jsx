@@ -18,7 +18,8 @@ export function CurrentStageCard({ activeStage, currentDay, durationDays, stageP
         </div>
         <div className="text-right">
           <p className="text-xs text-muted-foreground uppercase tracking-wider">Day {currentDay} of {durationDays}</p>
-          <p className="text-lg font-bold text-primary">{Math.round(stageProgress)}%</p>
+          <p className="text-lg font-bold text-primary leading-tight">{Math.round(stageProgress)}%</p>
+          <p className="text-[10px] text-muted-foreground">of this stage</p>
         </div>
       </div>
       

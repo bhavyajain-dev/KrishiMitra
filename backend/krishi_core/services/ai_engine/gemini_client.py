@@ -38,7 +38,7 @@ def _candidate_models():
 
 
 def gemini_generate(prompt: str, *, json_mode: bool = False, temperature: float | None = None,
-                    timeout: tuple = (5.0, 60.0)):
+                    timeout: tuple = (5.0, 60.0), image: tuple | None = None):
     """Generate text with Gemini.
 
     Returns ``(text, model_used)`` on success, or ``(None, None)`` when Gemini
@@ -48,7 +48,12 @@ def gemini_generate(prompt: str, *, json_mode: bool = False, temperature: float 
     if not key:
         return None, None
 
-    body = {"contents": [{"parts": [{"text": prompt}]}]}
+    parts = [{"text": prompt}]
+    if image:
+        # (mime_type, base64_data): a photo the farmer attached in chat.
+        mime, data = image
+        parts.append({"inline_data": {"mime_type": mime, "data": data}})
+    body = {"contents": [{"parts": parts}]}
     gen_cfg = {}
     if json_mode:
         gen_cfg["responseMimeType"] = "application/json"
