@@ -67,22 +67,41 @@ const getApiUrl = () => API_URL;
 // Resilient fetch wrapper with client-side abort timeout.
 // 60 s: the free Render backend sleeps when idle and takes ~15-50 s to wake,
 // so a shorter timeout made the first sign-in/sign-up after a quiet period fail.
+const NETWORK_ERROR_MESSAGE =
+  "Couldn't reach the KrishiMitra server. Check your internet connection and try again in a moment.";
+
+// `retry`: on a network error (server restarting or waking up), wait 3 s and
+// try once more. Only for requests that are safe to repeat (login, Google).
 async function fetchWithTimeout(url, options = {}, timeoutMs = 60000) {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeoutMs);
+  const { retry = false, ...fetchOptions } = options;
+  const attempt = async () => {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...fetchOptions, signal: controller.signal });
+    } finally {
+      clearTimeout(id);
+    }
+  };
   try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-    });
-    return response;
+    return await attempt();
   } catch (err) {
     if (err.name === "AbortError") {
       throw new Error("Request timed out. Please check your internet connection or try again.");
     }
+    // fetch() throws TypeError ("Failed to fetch") when the server can't be reached.
+    if (err instanceof TypeError) {
+      if (retry) {
+        await new Promise((r) => setTimeout(r, 3000));
+        try {
+          return await attempt();
+        } catch {
+          /* fall through to the friendly message */
+        }
+      }
+      throw new Error(NETWORK_ERROR_MESSAGE);
+    }
     throw err;
-  } finally {
-    clearTimeout(id);
   }
 }
 
@@ -478,6 +497,7 @@ function AuthPage() {
 
     try {
       const res = await fetchWithTimeout(`${API_URL}/auth/login`, {
+        retry: true,
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password: loginPassword }),
@@ -829,6 +849,7 @@ function AuthPage() {
 
     try {
       const res = await fetchWithTimeout(`${API_URL}/auth/google`, {
+        retry: true,
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ accessToken: idToken }),
