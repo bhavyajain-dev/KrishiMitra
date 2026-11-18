@@ -143,8 +143,22 @@ function GoogleIcon({ className = "h-4 w-4" }) {
   );
 }
 
+// useGoogleOAuth() throws outside <GoogleOAuthProvider>, and __root only adds
+// that provider when VITE_GOOGLE_CLIENT_ID is set. Check first, so a missing
+// client ID shows a note instead of crashing the whole sign-in page.
+function GoogleAuthSection(props) {
+  if (!import.meta.env.VITE_GOOGLE_CLIENT_ID) {
+    return (
+      <div className="rounded-xl border border-dashed border-border bg-surface-2 p-3 text-center text-xs text-muted-foreground min-h-[40px] flex items-center justify-center">
+        Google Sign-In is not configured on this site.
+      </div>
+    );
+  }
+  return <GoogleAuthSectionInner {...props} />;
+}
+
 // Reusable Google Auth Section with Idempotent Initialization and Zero Layout Shifts
-function GoogleAuthSection({ onSuccess, onError, disabled }) {
+function GoogleAuthSectionInner({ onSuccess, onError, disabled }) {
   const { clientId, scriptLoadedSuccessfully } = useGoogleOAuth();
   const containerRef = useRef(null);
   const renderedRef = useRef(false);
