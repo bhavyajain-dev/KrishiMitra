@@ -1269,6 +1269,17 @@ class SyncPlanAreaAndReplaceTests(TestCase):
         self.assertEqual(res.status_code, 200)
         self.assertEqual(CropPlan.objects.get(farm_id=self.farm).areaAcres, 2.5)
 
+    def test_stages_saved_in_date_order(self):
+        from krishi_core.models import CropPlan
+        plan = {"cropPlan": {**self.plan["cropPlan"], "milestones": [
+            {"stage": "Pre-sowing Soil Correction", "plannedDate": "2026-11-11"},
+            {"stage": "Land Preparation", "plannedDate": "2026-10-20"},
+            {"stage": "Sowing", "plannedDate": "2026-11-18"},
+        ]}}
+        self.c.post("/api/chat/sync-plan", {"farmId": self.farm, "syncData": plan, "areaAcres": 1}, format="json")
+        stages = [m["stage"] for m in CropPlan.objects.get(farm_id=self.farm).milestones]
+        self.assertEqual(stages, ["Land Preparation", "Pre-sowing Soil Correction", "Sowing"])
+
     def test_replace_retires_old_plan_and_keep_does_not(self):
         from krishi_core.models import CropPlan
         self.c.post("/api/chat/sync-plan", {"farmId": self.farm, "syncData": self.plan, "areaAcres": 1}, format="json")

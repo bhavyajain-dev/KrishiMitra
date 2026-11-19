@@ -284,8 +284,8 @@ function AlertsPage() {
               <div className="mt-3 text-base font-semibold">{activeFarm ? "All clear — no active alerts" : "No farm to monitor yet"}</div>
               <p className="mt-1 text-xs text-muted-foreground max-w-sm leading-relaxed">
                 {activeFarm
-                  ? "KrishiMitra checks weather changes, crop growth milestones and farm schedules. New alerts appear here when risk conditions are detected."
-                  : "Add your farm with its location, and weather and schedule alerts for it will appear here."}
+                  ? "Severe weather for this farm (heavy rain, strong wind, extreme heat) is added here when you open Weather or this page. A disease found in AI Mitra → Disease can be added here too."
+                  : "Add your farm with its location to see its weather risk and alerts here."}
               </p>
             </>
           )}

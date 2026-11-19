@@ -1862,6 +1862,10 @@ Output ONLY a raw JSON object with this exact schema:
         except Exception as e:
             print(f"Error parsing pandas plan: {e}")
 
+        # Stages in date order (the soil-correction stage is added at the
+        # front but can come after land preparation).
+        milestones.sort(key=lambda m: str(m.get("plannedDate") or ""))
+
         result = {
             "cropPlan": {
                 "cropName": req_crop,
@@ -2031,6 +2035,8 @@ def chat_sync_plan(request):
             m['_id'] = m.get('_id', str(uuid.uuid4()))
             m['status'] = m.get('status', 'pending')
             m['notes'] = m.get('notes', '')
+        # Saved in date order so every page lists stages as they happen.
+        milestones = sorted(milestones, key=lambda m: str(m.get('plannedDate') or ''))
 
         area = plan_data.get('areaAcres') or request.data.get('areaAcres') or 1.0
         serializer = CropPlanSerializer(data={
