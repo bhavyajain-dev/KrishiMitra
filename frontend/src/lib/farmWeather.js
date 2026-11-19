@@ -75,6 +75,56 @@ export function cropHealthRisk(activeCropAlerts) {
   };
 }
 
+const dayStart = (v) => new Date(`${String(v).slice(0, 10)}T00:00:00`);
+const shortDate = (d) => d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+
+/**
+ * "Crop plan work this week" tile from the plan's real dates: tasks due in
+ * the next 7 days when the plan has tasks, otherwise the stage that is on
+ * now and any stage starting within 7 days.
+ */
+export function planWeekTile(plan, today = new Date()) {
+  const crop = plan.cropName || "crop";
+  const tasks = tasksThisWeek(plan, today);
+  if (tasks.length) {
+    return {
+      level: `${tasks.length} ${tasks.length === 1 ? "task" : "tasks"}`,
+      pct: Math.min(100, tasks.length * 20),
+      tone: "cyan",
+      hint: `Next: ${tasks[0].title} (${shortDate(dayStart(tasks[0].date))})`,
+    };
+  }
+  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const weekEnd = new Date(start);
+  weekEnd.setDate(weekEnd.getDate() + 7);
+  const stages = (Array.isArray(plan.milestones) ? plan.milestones : [])
+    .filter((m) => m?.plannedDate && m?.stage)
+    .map((m) => ({ ...m, at: dayStart(m.plannedDate) }))
+    .sort((a, b) => a.at - b.at);
+  const current = [...stages].reverse().find((m) => m.at <= start);
+  const next = stages.find((m) => m.at > start);
+  if (next && next.at < weekEnd) {
+    return {
+      level: "Stage change",
+      pct: 60,
+      tone: "cyan",
+      hint: `${next.stage} starts ${shortDate(next.at)}${current ? ` (now: ${current.stage})` : ""}.`,
+    };
+  }
+  if (!current && next) {
+    return { level: "Not started", pct: 0, tone: "primary", hint: `${crop}: ${next.stage} starts ${shortDate(next.at)}.` };
+  }
+  if (current) {
+    return {
+      level: "On track",
+      pct: 20,
+      tone: "primary",
+      hint: `Now: ${current.stage}.${next ? ` Next: ${next.stage} on ${shortDate(next.at)}.` : ""}`,
+    };
+  }
+  return { level: "—", pct: 0, tone: "primary", hint: `No dates in the ${crop} plan.` };
+}
+
 /** Plan tasks due in the next 7 days (today included). */
 export function tasksThisWeek(plan, today = new Date()) {
   if (!plan) return null;

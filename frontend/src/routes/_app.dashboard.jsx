@@ -43,15 +43,35 @@ function Dashboard() {
 
   const [cropPlan, setCropPlan] = useState(null);
 
+  // The viewing farm's active crop plan. Cleared on every farm switch so a
+  // farm without a plan never shows the previous farm's plan.
   useEffect(() => {
-    async function loadData() {
-      try {
-        const plans = await fetchScoped("/crop-plans");
-        if (Array.isArray(plans) && plans.length > 0) setCropPlan(plans[0]);
-      } catch (e) { /* silently fail */ }
+    let cancelled = false;
+    setCropPlan(null);
+    if (!activeFarm) return;
+    fetchScoped("/crop-plans")
+      .then((plans) => {
+        if (cancelled || !Array.isArray(plans)) return;
+        setCropPlan(plans.find((p) => p.status === "active") || null);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [activeFarm, fetchScoped]);
+
+  const cropIntro = (() => {
+    if (cropPlan?.cropName) {
+      const sow = cropPlan.sowingDate ? new Date(cropPlan.sowingDate) : null;
+      const day = sow ? Math.floor((Date.now() - sow.getTime()) / 86400000) + 1 : null;
+      if (sow && day < 1) {
+        return `has ${cropPlan.cropName} planned, sowing on ${sow.toLocaleDateString("en-IN", { day: "numeric", month: "short" })}. Get the field ready.`;
+      }
+      return `has ${cropPlan.cropName} growing${day ? ` (day ${day})` : ""}. Stay on top of today's tasks to keep the season on track.`;
     }
-    loadData();
-  }, [activeFarm]);
+    if (activeFarm?.currentCrop) {
+      return `has ${activeFarm.currentCrop} growing. Make a crop plan to get a day-by-day schedule.`;
+    }
+    return "has no active crop yet. Get crop recommendations or make a crop plan to start the season.";
+  })();
 
   // Pre-load weather from the backend DB cache on mount so the weather widget
   // shows real data even without the user ever visiting the Weather page.
@@ -127,7 +147,14 @@ function Dashboard() {
   const today = new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
   // Compute real crop plan progress based on dates
-  const stages = cropPlan?.milestones || [];
+  // Stages in date order; the current one is the latest that has started.
+  const stageTime = (s) => (s?.plannedDate ? new Date(`${String(s.plannedDate).slice(0, 10)}T00:00:00`).getTime() : NaN);
+  const stages = [...(cropPlan?.milestones || [])].sort((a, b) => (stageTime(a) || 0) - (stageTime(b) || 0));
+  const nowMs = Date.now();
+  let currentIdx = -1;
+  stages.forEach((s, i) => { if (stageTime(s) <= nowMs) currentIdx = i; });
+  const stagePhase = (i) => (stages[i]?.status === "done" ? "done" : i === currentIdx ? "current" : i < currentIdx ? "passed" : "upcoming");
+  const shownStages = stages.slice(Math.max(0, Math.min(currentIdx - 1, stages.length - 5)), Math.max(0, Math.min(currentIdx - 1, stages.length - 5)) + 5);
   const doneStages = stages.filter(s => s.status === "done").length;
   let cropProgress = 0;
   let cropProgressHint = "No active crop plan";
@@ -142,8 +169,10 @@ function Dashboard() {
     
     cropProgress = Math.min(100, Math.round((elapsedDays / durationDays) * 100));
     
-    const activeStage = stages.find(s => s.status === "in-progress" || s.status === "pending");
-    cropProgressHint = activeStage ? `${activeStage.stage} · Day ${elapsedDays} of ${durationDays}` : `Day ${elapsedDays} of ${durationDays}`;
+    const activeStage = elapsedDays > 0 ? stages[currentIdx] : null;
+    cropProgressHint = sowing > todayDate
+      ? `Sowing on ${sowing.toLocaleDateString("en-IN", { day: "numeric", month: "short" })}`
+      : activeStage ? `${activeStage.stage} · Day ${elapsedDays} of ${durationDays}` : `Day ${elapsedDays} of ${durationDays}`;
   } else if (stages.length > 0) {
     cropProgress = Math.round((doneStages / stages.length) * 100);
     const activeStage = stages.find(s => s.status === "in-progress" || s.status === "pending");
@@ -203,7 +232,7 @@ function Dashboard() {
             </h1>
             <p className="mt-2 max-w-lg text-sm text-muted-foreground">
               {activeFarm
-                ? <><span className="font-semibold text-foreground">{activeFarm.name}</span> {activeFarm.currentCrop ? `has ${activeFarm.currentCrop} growing. Stay on top of today's tasks to keep the season on track.` : "has no active crop yet. Get crop recommendations or make a crop plan to start the season."}</>
+                ? <><span className="font-semibold text-foreground">{activeFarm.name}</span> {cropIntro}</>
                 : "Welcome back! Add your first farm to get started with your personalized dashboard."}
             </p>
             <div className="mt-5 flex flex-wrap gap-2.5">
@@ -372,31 +401,35 @@ function Dashboard() {
             )}
           </div>
           <div className="space-y-3">
-            {stages.slice(0, 5).map((s) => (
+            {shownStages.map((s) => {
+              const phase = stagePhase(stages.indexOf(s));
+              return (
               <div key={s._id || s.stage} className="flex items-center gap-3">
                 <span
                   className={`grid h-5 w-5 shrink-0 place-items-center rounded-full text-[9px] font-bold ${
-                    s.status === "done"
+                    phase === "done"
                       ? "bg-primary text-primary-foreground"
-                      : s.status === "in-progress"
+                      : phase === "current"
                         ? "bg-primary/15 text-primary ring-1 ring-primary pulse-dot"
                         : "bg-secondary text-muted-foreground"
                   }`}
                 >
-                  {s.status === "done" ? "✓" : ""}
+                  {phase === "done" ? "✓" : ""}
                 </span>
                 <div className="min-w-0 flex-1">
                   <div
-                    className={`truncate text-xs ${s.status === "in-progress" ? "font-semibold text-primary" : s.status === "done" ? "text-muted-foreground" : ""}`}
+                    className={`truncate text-xs ${phase === "current" ? "font-semibold text-primary" : phase === "upcoming" ? "" : "text-muted-foreground"}`}
                   >
                     {s.stage}
                   </div>
                   <div className="text-[10px] text-muted-foreground">
-                    {s.plannedDate ? new Date(s.plannedDate).toLocaleDateString() : ""}
+                    {s.plannedDate ? new Date(`${String(s.plannedDate).slice(0, 10)}T00:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : ""}
+                    {phase === "current" ? " · now" : phase === "passed" ? " · passed" : ""}
                   </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
             {stages.length === 0 && (
               <div className="text-xs text-muted-foreground">No active crop plan</div>
             )}

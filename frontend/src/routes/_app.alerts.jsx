@@ -1,11 +1,19 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { setAiHandoff } from "@/lib/aiHandoff";
+
+const CATEGORY_LABELS = {
+  weather: "Weather",
+  schedule_delay: "Schedule",
+  crop_health: "Crop health",
+  equipment: "Equipment",
+};
 import { useState, useEffect } from "react";
 import { AlertTriangle, CheckCheck, CloudRain, Info, ShieldAlert, Sprout, Timer, RotateCcw } from "lucide-react";
 import { useAppData } from "@/lib/AppDataContext";
 import { PageHeader } from "@/components/app/AppShell";
 import { toast } from "sonner";
 import {
-  farmHasCoords, fetchFarmWeatherSnapshot, weatherRisk, cropHealthRisk, tasksThisWeek,
+  farmHasCoords, fetchFarmWeatherSnapshot, weatherRisk, cropHealthRisk, planWeekTile,
   severeWeatherAlert, alreadyRaisedToday,
 } from "@/lib/farmWeather";
 
@@ -110,19 +118,11 @@ function AlertsPage() {
       : weatherState === "unavailable" ? "Weather service unreachable right now."
       : "Loading today's weather…"
   );
-  const weekTasks = tasksThisWeek(plan);
   const scheduleTile = plan === undefined
     ? unknown("Loading crop plan…")
     : !plan
       ? unknown("No active crop plan for this farm.")
-      : {
-          level: weekTasks.length ? `${weekTasks.length} ${weekTasks.length === 1 ? "task" : "tasks"}` : "None due",
-          pct: Math.min(100, weekTasks.length * 20),
-          tone: weekTasks.length ? "cyan" : "primary",
-          hint: weekTasks.length
-            ? `Next: ${weekTasks[0].title} (${new Date(`${String(weekTasks[0].date).slice(0, 10)}T00:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short" })})`
-            : `No ${plan.cropName || "crop plan"} tasks in the next 7 days.`,
-        };
+      : planWeekTile(plan);
   const healthTile = cropHealthRisk(openCount("crop_health"));
 
   const riskCategories = [
@@ -130,6 +130,27 @@ function AlertsPage() {
     { icon: Timer, label: "Crop plan work this week", ...scheduleTile },
     { icon: Sprout, label: "Crop health", ...healthTile },
   ];
+
+  // "Take action": AI Mitra gets the alert and the farm, and answers with
+  // what to do now.
+  const navigate = useNavigate();
+  const handleTakeAction = (a) => {
+    const farm = activeFarm
+      ? `${activeFarm.name}${activeFarm.location?.address ? ` (${activeFarm.location.address})` : ""}`
+      : "my farm";
+    setAiHandoff({
+      source: "alerts",
+      taskName: "Risk Alert",
+      actionLabel: "Planning action for alert",
+      completedLabel: "Action plan ready",
+      contextTitle: `Alert — ${a.title}`.slice(0, 80),
+      prompt:
+        `I have this ${(CATEGORY_LABELS[a.category] || "risk").toLowerCase()} alert for ${farm}:\n` +
+        `"${a.title}": ${a.message || a.detail || ""}\n\n` +
+        "What should I do about it today? Give clear, practical steps in order, and tell me what to watch for over the next few days.",
+    });
+    navigate({ to: "/ai-mitra" });
+  };
 
   // Persist dismissal as status: "dismissed" so it survives a refresh
   const handleDismiss = (id) => {
@@ -173,7 +194,7 @@ function AlertsPage() {
       <PageHeader
         title="Risk Alerts"
         subtitle={activeFarm
-          ? `${criticalCount} critical · ${warningCount} warnings · monitored for ${activeFarm.name}`
+          ? `${criticalCount} critical · ${warningCount} ${warningCount === 1 ? "warning" : "warnings"} · monitored for ${activeFarm.name}`
           : "Add a farm to start risk monitoring"}
         action={
           <div className="flex flex-wrap items-center gap-2">
@@ -290,13 +311,21 @@ function AlertsPage() {
                       {a.detail || a.message}
                     </p>
                     <div className="mt-2.5 flex flex-wrap items-center gap-3 text-[10px] text-muted-foreground">
-                      <span>{a.source || "System"}</span>
-                      <span>·</span>
-                      <span>{a.createdAt ? new Date(a.createdAt).toLocaleDateString() : ""}</span>
+                      <span>{CATEGORY_LABELS[a.category] || "Alert"}</span>
+                      {(a.createdAt || a.created_at) && (
+                        <>
+                          <span>·</span>
+                          <span>{new Date(a.createdAt || a.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</span>
+                        </>
+                      )}
                     </div>
                   </div>
                   <div className="flex shrink-0 gap-2">
-                    <button className="rounded-lg bg-primary px-3.5 py-1.5 text-[11px] font-semibold text-primary-foreground transition-transform hover:scale-[1.03]">
+                    <button
+                      type="button"
+                      onClick={() => handleTakeAction(a)}
+                      className="rounded-lg bg-primary px-3.5 py-1.5 text-[11px] font-semibold text-primary-foreground transition-transform hover:scale-[1.03] cursor-pointer"
+                    >
                       Take action
                     </button>
                     <button
