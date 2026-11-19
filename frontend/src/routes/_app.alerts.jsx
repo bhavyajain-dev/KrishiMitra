@@ -1,9 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AlertTriangle, CheckCheck, CloudRain, Info, ShieldAlert, Sprout, Timer, RotateCcw } from "lucide-react";
 import { useAppData } from "@/lib/AppDataContext";
 import { PageHeader } from "@/components/app/AppShell";
 import { toast } from "sonner";
+import {
+  farmHasCoords, fetchFarmWeatherSnapshot, weatherRisk, cropHealthRisk, tasksThisWeek,
+  severeWeatherAlert, alreadyRaisedToday,
+} from "@/lib/farmWeather";
 
 export const Route = createFileRoute("/_app/alerts")({
   head: () => ({
@@ -43,16 +47,11 @@ const config = {
   },
 };
 
-const DEFAULT_RADAR = {
-  "Weather risk": { level: "Low", pct: 0, tone: "primary" },
-  "Schedule delay risk": { level: "Low", pct: 0, tone: "primary" },
-  "Crop health risk": { level: "Low", pct: 0, tone: "primary" },
-};
-
-
-
 function AlertsPage() {
-  const { activeFarm, alerts = [], setAlerts, patchRecord } = useAppData();
+  const {
+    token, activeFarm, farmAlerts: alerts = [], setAlerts, patchRecord, postScoped, fetchScoped,
+    weatherSnapshot, setWeatherSnapshot, fetchDashboardData,
+  } = useAppData();
   const [dismissed, setDismissed] = useState([]);
   const [isRestoring, setIsRestoring] = useState(false);
 
@@ -61,14 +60,75 @@ function AlertsPage() {
   const criticalCount = visibleAlerts.filter((a) => a.severity === "critical").length;
   const warningCount = visibleAlerts.filter((a) => a.severity === "warning").length;
 
-  const radarData = activeFarm?.riskRadarData && Object.keys(activeFarm.riskRadarData).length > 0 
-    ? activeFarm.riskRadarData 
-    : DEFAULT_RADAR;
+  // Live weather for this farm (shared with the dashboard and AI Mitra).
+  const hasCoords = farmHasCoords(activeFarm);
+  const [weatherState, setWeatherState] = useState("loading");
+  useEffect(() => {
+    if (!activeFarm || !token) return;
+    if (!hasCoords) { setWeatherState("no-location"); return; }
+    if (weatherSnapshot) { setWeatherState("ready"); return; }
+    let cancelled = false;
+    setWeatherState("loading");
+    fetchFarmWeatherSnapshot(activeFarm, token)
+      .then((snap) => { if (!cancelled) setWeatherSnapshot(snap); })
+      .catch(() => { if (!cancelled) setWeatherState("unavailable"); });
+    return () => { cancelled = true; };
+  }, [activeFarm, token, hasCoords, weatherSnapshot, setWeatherSnapshot]);
+
+  // Severe weather today raises an alert here too, not only on the Weather page.
+  useEffect(() => {
+    if (!weatherSnapshot || !activeFarm) return;
+    const raised = severeWeatherAlert(weatherSnapshot, activeFarm.location?.address || activeFarm.name);
+    if (!raised || alreadyRaisedToday(alerts, raised.title)) return;
+    postScoped("/alerts", { category: "weather", ...raised }).then(() => fetchDashboardData?.());
+  }, [weatherSnapshot, activeFarm]);
+
+  // The farm's active crop plan, for this week's work.
+  const [plan, setPlan] = useState(undefined); // undefined = loading, null = none
+  const farmId = activeFarm?._id || activeFarm?.id || null;
+  useEffect(() => {
+    if (!farmId) { setPlan(null); return; }
+    let cancelled = false;
+    setPlan(undefined);
+    fetchScoped("/crop-plans")
+      .then((list) => {
+        if (cancelled) return;
+        const plans = Array.isArray(list) ? list : [];
+        setPlan(plans.find((p) => p.status === "active") || null);
+      })
+      .catch(() => { if (!cancelled) setPlan(null); });
+    return () => { cancelled = true; };
+  }, [farmId, fetchScoped]);
+
+  const openCount = (category) => visibleAlerts.filter((a) => a.category === category).length;
+
+  // Every tile is worked out from real data; "—" when there is none.
+  const unknown = (hint) => ({ level: "—", pct: 0, tone: "primary", hint });
+  const weather = weatherRisk(weatherSnapshot, openCount("weather"));
+  const weatherTile = weather || unknown(
+    weatherState === "no-location" ? "Farm location not found on the map. Edit it on the Farms page."
+      : weatherState === "unavailable" ? "Weather service unreachable right now."
+      : "Loading today's weather…"
+  );
+  const weekTasks = tasksThisWeek(plan);
+  const scheduleTile = plan === undefined
+    ? unknown("Loading crop plan…")
+    : !plan
+      ? unknown("No active crop plan for this farm.")
+      : {
+          level: weekTasks.length ? `${weekTasks.length} ${weekTasks.length === 1 ? "task" : "tasks"}` : "None due",
+          pct: Math.min(100, weekTasks.length * 20),
+          tone: weekTasks.length ? "cyan" : "primary",
+          hint: weekTasks.length
+            ? `Next: ${weekTasks[0].title} (${new Date(`${String(weekTasks[0].date).slice(0, 10)}T00:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short" })})`
+            : `No ${plan.cropName || "crop plan"} tasks in the next 7 days.`,
+        };
+  const healthTile = cropHealthRisk(openCount("crop_health"));
 
   const riskCategories = [
-    { icon: CloudRain, label: "Weather risk", ...radarData["Weather risk"] },
-    { icon: Timer, label: "Schedule delay risk", ...radarData["Schedule delay risk"] },
-    { icon: Sprout, label: "Crop health risk", ...radarData["Crop health risk"] },
+    { icon: CloudRain, label: "Weather risk today", ...weatherTile },
+    { icon: Timer, label: "Crop plan work this week", ...scheduleTile },
+    { icon: Sprout, label: "Crop health", ...healthTile },
   ];
 
   // Persist dismissal as status: "dismissed" so it survives a refresh
@@ -170,6 +230,9 @@ function AlertsPage() {
                 style={{ width: `${r.pct}%` }}
               />
             </div>
+            {activeFarm && r.hint && (
+              <p className="mt-2 text-[11px] leading-snug text-muted-foreground">{r.hint}</p>
+            )}
           </div>
         ))}
       </section>

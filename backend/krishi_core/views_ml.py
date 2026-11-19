@@ -35,6 +35,7 @@ from rest_framework.views import APIView
 from . import ml_loader
 from .throttles import AIRateThrottle
 from .utils import CROPS, WATER_COMPAT, get_crop_meta, check_image_quality, extract_section
+from .services.crop_profile import pretty_crop_name
 from .serializers import (
     RetrieveRequestSerializer,
     SoilRecommendRequestSerializer,
@@ -153,7 +154,9 @@ class SoilRecommendView(APIView):
             for r in results:
                 ml_data = {
                     "Soil_Type": d.get("soilType", "Black"),
-                    "Crop_Type": r["cropName"].capitalize(),
+                    # "Chickpea (Chana)" -> "Chickpea": the fertilizer and
+                    # irrigation lookups know crops by their plain name.
+                    "Crop_Type": r["cropName"].split(" (")[0].strip().capitalize(),
                     "Crop_Growth_Stage": "Pre-emergence",
                     "Season": season_in.capitalize(),
                     "Irrigation_Type": d.get("irrigationType", "Drip"),
@@ -211,10 +214,10 @@ class SoilRecommendView(APIView):
 You are an agricultural expert. A farmer is asking for crop recommendations for their land.
 {soil_desc}{extra_soil}
 The top crops recommended by our engine are:
-{', '.join([r['cropName'] for r in results])}
+{', '.join([r.get('displayName') or r['cropName'] for r in results])}
 
 Mention only the soil values listed above; do not assume or invent any other soil readings.
-Write a short, engaging 2-paragraph summary directly to the farmer. Explain why the top pick ({results[0]['cropName']}) is the best choice based on their soil and local climate, and briefly mention the alternatives.{" Also encourage them to add their Soil Health Card values for a more precise recommendation." if soil_basis != "soil_test" else ""}
+Write a short, engaging 2-paragraph summary directly to the farmer. Explain why the top pick ({results[0].get('displayName') or results[0]['cropName']}) is the best choice based on their soil and local climate, and briefly mention the alternatives.{" Also encourage them to add their Soil Health Card values for a more precise recommendation." if soil_basis != "soil_test" else ""}
 Keep it conversational, encouraging, and formatted in plain text (no markdown formatting needed).
 """
             # Strict short timeout (1.0s connect, 2.5s read) to ensure fast endpoint response
@@ -228,9 +231,9 @@ Keep it conversational, encouraging, and formatted in plain text (no markdown fo
 
         # Deterministic agronomic explanation if LLM is offline, timed out, or unavailable
         if not llm_summary and results:
-            top_crop = results[0]["cropName"]
+            top_crop = (results[0].get("displayName") or results[0]["cropName"])
             top_score = results[0].get("suitabilityScore", 85)
-            alt_crops = ", ".join([r["cropName"] for r in results[1:4]]) if len(results) > 1 else "other seasonal crops"
+            alt_crops = ", ".join([(r.get("displayName") or r["cropName"]) for r in results[1:4]]) if len(results) > 1 else "other seasonal crops"
             llm_summary = (
                 f"{soil_desc} {top_crop} is your best match this season with an estimated suitability score of {top_score}%. "
                 f"Viable alternatives for this season include {alt_crops}."
@@ -264,7 +267,12 @@ Keep it conversational, encouraging, and formatted in plain text (no markdown fo
 
     def _heuristic_fallback(self, ph, org_carbon, season_in, area_acres, water_avail, collection, ph_known=True):
         results = []
-        for crop in CROPS:
+        # Only crops sown in the chosen season. Showing a Kharif crop (cotton,
+        # soybean) as an option in Rabi would tell a farmer to sow out of
+        # season. If no crop in the list belongs to the season (e.g. Zaid),
+        # all are scored, with the off-season penalty below.
+        in_season = [c for c in CROPS if c["season"] == season_in]
+        for crop in (in_season or CROPS):
             ph_lo, ph_hi = crop["phRange"]
             
             soil_match = 100 if ph_lo <= ph <= ph_hi else max(0, 100 - abs(ph - (ph_lo + ph_hi) / 2) * 20)
@@ -286,7 +294,7 @@ Keep it conversational, encouraging, and formatted in plain text (no markdown fo
             margin = revenue - cost
 
             results.append({
-                "cropName": crop["name"], "suitabilityScore": suit,
+                "cropName": crop["name"], "displayName": crop["name"], "suitabilityScore": suit,
                 "soilMatchPct": soil_match, "weatherMatchPct": weather_pct,
                 "expectedYieldKg": yield_kg, "expectedMarginRs": margin,
                 "durationDays": crop["durationDays"],
@@ -412,6 +420,7 @@ Keep it conversational, encouraging, and formatted in plain text (no markdown fo
 
             results.append({
                 "cropName": crop,
+                "displayName": pretty_crop_name(crop),
                 "suitabilityScore": score,       # canonical: model confidence
                 "soilMatchPct": soil_match,      # real pH-based signal
                 "weatherMatchPct": score,        # model/climate-driven

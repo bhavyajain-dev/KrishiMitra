@@ -1,5 +1,6 @@
 """Crop-specific explanation text built from data/01_crop_profile.csv."""
 import os
+import re
 from functools import lru_cache
 
 from django.conf import settings
@@ -27,6 +28,22 @@ def _num(v):
     return int(f) if f.is_integer() else f
 
 
+_PRETTY = {"chickpea": "Chickpea", "mungbean": "Mung bean", "uradbean": "Urad bean",
+           "kidneybeans": "Kidney beans", "pigeonpeas": "Pigeon pea", "mothbeans": "Moth bean"}
+
+
+def pretty_crop_name(name):
+    """Readable crop name: "ChickPea" -> "Chickpea", "MungBean" -> "Mung bean"."""
+    raw = str(name or "").strip()
+    key = raw.lower().replace(" ", "")
+    if key in _PRETTY:
+        return _PRETTY[key]
+    if " " not in raw and re.search(r"[a-z][A-Z]", raw):
+        words = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", raw).split()
+        return " ".join([words[0]] + [w.lower() for w in words[1:]])
+    return raw
+
+
 def crop_reason(crop_name, ph=None):
     """One or two sentences on why this crop fits, or None if not profiled."""
     p = _profiles().get(str(crop_name or "").strip().lower())
@@ -36,7 +53,7 @@ def crop_reason(crop_name, ph=None):
         season = str(p["season"]).strip()
         season_txt = "an annual crop" if season.lower() == "annual" else f"a {season} crop"
         ph_lo, ph_hi = float(p["ideal_ph_min"]), float(p["ideal_ph_max"])
-        text = (f"{p['crop_name']} is {season_txt} that grows best at "
+        text = (f"{pretty_crop_name(p['crop_name'])} is {season_txt} that grows best at "
                 f"{_num(p['temp_min'])}–{_num(p['temp_max'])} °C in soil pH {ph_lo:.1f}–{ph_hi:.1f}.")
         if ph is not None:
             if ph_lo <= ph <= ph_hi:

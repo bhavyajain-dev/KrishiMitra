@@ -191,6 +191,12 @@ function FarmsPage() {
         waterResources: Array.isArray(editFormData.waterResources) ? editFormData.waterResources : [],
         waterLevel: editFormData.waterLevel,
         currentCrop: editFormData.currentCrop,
+        soilType: editFormData.soilType || "other",
+        // Only send the location when it changed: the server then looks the
+        // new place up on the map (unchanged = keep the saved coordinates).
+        ...(((editFormData.location || "").trim() !== (targetEditFarm?.location?.address || "").trim())
+          ? { location: (editFormData.location || "").trim() ? { address: editFormData.location.trim() } : {} }
+          : {}),
         ph: (!editFormData.ph && editFormData.ph !== 0) ? null : Number(editFormData.ph),
         nitrogen: (!editFormData.nitrogen && editFormData.nitrogen !== 0) ? null : Number(editFormData.nitrogen),
         phosphorus: (!editFormData.phosphorus && editFormData.phosphorus !== 0) ? null : Number(editFormData.phosphorus),
@@ -209,7 +215,11 @@ function FarmsPage() {
       
       if (res.ok) {
         const savedFarm = await res.json();
-        
+        const newAddress = (editFormData.location || "").trim();
+        if (newAddress && newAddress !== (targetEditFarm?.location?.address || "").trim()
+            && (savedFarm?.location?.lat == null || savedFarm?.location?.lon == null)) {
+          toast.warning("Saved, but we couldn't find that place on the map. Check the spelling (e.g. \"Nashik, Maharashtra\").");
+        }
         await fetchDashboardData();
         toast.success("Farm updated");
         setIsEditModalOpen(false);
@@ -300,6 +310,8 @@ function FarmsPage() {
       waterResources: Array.isArray(f.waterResources) ? f.waterResources : [],
       waterLevel: f.waterLevel || "medium",
       currentCrop: f.currentCrop || "",
+      soilType: f.soilType || "other",
+      location: f.location?.address || "",
       ph: f.ph ?? "",
       nitrogen: f.nitrogen ?? "",
       phosphorus: f.phosphorus ?? "",
@@ -796,6 +808,30 @@ function FarmsPage() {
               />
               {editFormErrors.areaAcres && <p className="mt-1 flex items-center gap-1 text-[11px] text-destructive"><AlertCircle className="h-3 w-3" />{editFormErrors.areaAcres}</p>}
             </div>
+            <div>
+              <label htmlFor="edit_location" className="mb-1 block text-[11px] font-medium text-muted-foreground">Location</label>
+              <input
+                id="edit_location"
+                maxLength={255}
+                placeholder="e.g. Nashik, Maharashtra"
+                value={editFormData.location || ""}
+                onChange={(e) => setEditFormData({ ...editFormData, location: e.target.value })}
+                className="w-full rounded-xl border border-input bg-secondary/40 px-3.5 py-2 text-sm outline-none transition-colors focus:border-primary/50"
+              />
+            </div>
+            <div>
+              <label htmlFor="edit_soilType" className="mb-1 block text-[11px] font-medium text-muted-foreground">Soil Type</label>
+              <select id="edit_soilType" value={editFormData.soilType || "other"} onChange={(e) => setEditFormData({ ...editFormData, soilType: e.target.value })} className="w-full rounded-xl border border-input bg-secondary/40 px-3.5 py-2 text-sm outline-none transition-colors focus:border-primary/50">
+                <option value="alluvial">Alluvial</option>
+                <option value="black">Black</option>
+                <option value="red">Red</option>
+                <option value="laterite">Laterite</option>
+                <option value="sandy">Sandy</option>
+                <option value="clay">Clay</option>
+                <option value="loamy">Loamy</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
 
             <div>
               <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Water Resources</label>
@@ -832,32 +868,32 @@ function FarmsPage() {
               <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Soil Test Data (Optional)</label>
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
-                  <label htmlFor="edit_ph" className="mb-1 block text-[10px] text-muted-foreground">pH (0-14)</label>
+                  <label htmlFor="edit_ph" className="mb-1 block text-[10px] text-muted-foreground">pH ({FARM_LIMITS.ph[0]}–{FARM_LIMITS.ph[1]})</label>
                   <input type="number" step="any" min={FARM_LIMITS.ph[0]} max={FARM_LIMITS.ph[1]} id="edit_ph" value={editFormData.ph} onChange={(e) => { setEditFormData({...editFormData, ph: e.target.value}); if (editFormErrors.ph) setEditFormErrors(p => ({...p, ph: ""})); }} className={`w-full rounded-xl border bg-secondary/40 px-3.5 py-2 text-sm outline-none transition-colors focus:border-primary/50 ${editFormErrors.ph ? "border-destructive" : "border-input"}`} />
                   {editFormErrors.ph && <p className="mt-1 text-[10px] text-destructive">{editFormErrors.ph}</p>}
                 </div>
                 <div>
-                  <label htmlFor="edit_ec" className="mb-1 block text-[10px] text-muted-foreground">EC (0-20 dS/m)</label>
+                  <label htmlFor="edit_ec" className="mb-1 block text-[10px] text-muted-foreground">EC ({FARM_LIMITS.ec[0]}–{FARM_LIMITS.ec[1]} dS/m)</label>
                   <input type="number" step="any" min={FARM_LIMITS.ec[0]} max={FARM_LIMITS.ec[1]} id="edit_ec" value={editFormData.ec} onChange={(e) => { setEditFormData({...editFormData, ec: e.target.value}); if (editFormErrors.ec) setEditFormErrors(p => ({...p, ec: ""})); }} className={`w-full rounded-xl border bg-secondary/40 px-3.5 py-2 text-sm outline-none transition-colors focus:border-primary/50 ${editFormErrors.ec ? "border-destructive" : "border-input"}`} />
                   {editFormErrors.ec && <p className="mt-1 text-[10px] text-destructive">{editFormErrors.ec}</p>}
                 </div>
                 <div>
-                  <label htmlFor="edit_nitrogen" className="mb-1 block text-[10px] text-muted-foreground">Nitrogen (0-999 kg/ha)</label>
+                  <label htmlFor="edit_nitrogen" className="mb-1 block text-[10px] text-muted-foreground">Nitrogen ({FARM_LIMITS.nitrogen[0]}–{FARM_LIMITS.nitrogen[1]} kg/ha)</label>
                   <input type="number" min={FARM_LIMITS.nitrogen[0]} max={FARM_LIMITS.nitrogen[1]} id="edit_nitrogen" value={editFormData.nitrogen} onChange={(e) => { setEditFormData({...editFormData, nitrogen: e.target.value}); if (editFormErrors.nitrogen) setEditFormErrors(p => ({...p, nitrogen: ""})); }} className={`w-full rounded-xl border bg-secondary/40 px-3.5 py-2 text-sm outline-none transition-colors focus:border-primary/50 ${editFormErrors.nitrogen ? "border-destructive" : "border-input"}`} />
                   {editFormErrors.nitrogen && <p className="mt-1 text-[10px] text-destructive">{editFormErrors.nitrogen}</p>}
                 </div>
                 <div>
-                  <label htmlFor="edit_phosphorus" className="mb-1 block text-[10px] text-muted-foreground">Phosphorus (0-999 kg/ha)</label>
+                  <label htmlFor="edit_phosphorus" className="mb-1 block text-[10px] text-muted-foreground">Phosphorus ({FARM_LIMITS.phosphorus[0]}–{FARM_LIMITS.phosphorus[1]} kg/ha)</label>
                   <input type="number" min={FARM_LIMITS.phosphorus[0]} max={FARM_LIMITS.phosphorus[1]} id="edit_phosphorus" value={editFormData.phosphorus} onChange={(e) => { setEditFormData({...editFormData, phosphorus: e.target.value}); if (editFormErrors.phosphorus) setEditFormErrors(p => ({...p, phosphorus: ""})); }} className={`w-full rounded-xl border bg-secondary/40 px-3.5 py-2 text-sm outline-none transition-colors focus:border-primary/50 ${editFormErrors.phosphorus ? "border-destructive" : "border-input"}`} />
                   {editFormErrors.phosphorus && <p className="mt-1 text-[10px] text-destructive">{editFormErrors.phosphorus}</p>}
                 </div>
                 <div>
-                  <label htmlFor="edit_potassium" className="mb-1 block text-[10px] text-muted-foreground">Potassium (0-999 kg/ha)</label>
+                  <label htmlFor="edit_potassium" className="mb-1 block text-[10px] text-muted-foreground">Potassium ({FARM_LIMITS.potassium[0]}–{FARM_LIMITS.potassium[1]} kg/ha)</label>
                   <input type="number" min={FARM_LIMITS.potassium[0]} max={FARM_LIMITS.potassium[1]} id="edit_potassium" value={editFormData.potassium} onChange={(e) => { setEditFormData({...editFormData, potassium: e.target.value}); if (editFormErrors.potassium) setEditFormErrors(p => ({...p, potassium: ""})); }} className={`w-full rounded-xl border bg-secondary/40 px-3.5 py-2 text-sm outline-none transition-colors focus:border-primary/50 ${editFormErrors.potassium ? "border-destructive" : "border-input"}`} />
                   {editFormErrors.potassium && <p className="mt-1 text-[10px] text-destructive">{editFormErrors.potassium}</p>}
                 </div>
                 <div>
-                  <label htmlFor="edit_carbon" className="mb-1 block text-[10px] text-muted-foreground">Organic Carbon (0-10 %)</label>
+                  <label htmlFor="edit_carbon" className="mb-1 block text-[10px] text-muted-foreground">Organic Carbon ({FARM_LIMITS.organicCarbon[0]}–{FARM_LIMITS.organicCarbon[1]} %)</label>
                   <input type="number" step="any" min={FARM_LIMITS.organicCarbon[0]} max={FARM_LIMITS.organicCarbon[1]} id="edit_carbon" value={editFormData.organicCarbon} onChange={(e) => { setEditFormData({...editFormData, organicCarbon: e.target.value}); if (editFormErrors.organicCarbon) setEditFormErrors(p => ({...p, organicCarbon: ""})); }} className={`w-full rounded-xl border bg-secondary/40 px-3.5 py-2 text-sm outline-none transition-colors focus:border-primary/50 ${editFormErrors.organicCarbon ? "border-destructive" : "border-input"}`} />
                   {editFormErrors.organicCarbon && <p className="mt-1 text-[10px] text-destructive">{editFormErrors.organicCarbon}</p>}
                 </div>

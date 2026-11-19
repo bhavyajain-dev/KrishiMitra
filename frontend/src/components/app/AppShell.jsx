@@ -85,7 +85,7 @@ export function BrandMark({ compact = false }) {
 
 function SidebarContent({ onNavigate }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const { farms, activeFarmId, setActiveFarmId, alerts = [], notifications = [] } = useAppData();
+  const { farms, activeFarmId, setActiveFarmId, openFarmAlerts: alerts = [], notifications = [] } = useAppData();
 
   const renderItem = (item) => {
     const active = pathname === item.to || pathname.startsWith(item.to + "/");
@@ -189,7 +189,7 @@ export function AppShell({ children }) {
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
 
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const { userProfile, activeFarm, alerts = [] } = useAppData();
+  const { userProfile, activeFarm, openFarmAlerts: alerts = [] } = useAppData();
   const current =
     [...nav, ...secondaryNav, ...extraTitles].find((n) => pathname === n.to || pathname.startsWith(n.to + "/"))
       ?.label ?? "Dashboard";
