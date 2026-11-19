@@ -165,7 +165,8 @@ function Dashboard() {
     const harvest = new Date(cropPlan.expectedHarvestDate);
     
     const durationDays = Math.max(1, Math.round((harvest - sowing) / (1000 * 60 * 60 * 24)));
-    const elapsedDays = Math.max(0, Math.round((todayDate - sowing) / (1000 * 60 * 60 * 24)));
+    // Sowing day is day 1 (same count as the greeting above).
+    const elapsedDays = Math.max(0, Math.floor((todayDate - sowing) / (1000 * 60 * 60 * 24)) + 1);
     
     cropProgress = Math.min(100, Math.round((elapsedDays / durationDays) * 100));
     

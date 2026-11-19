@@ -118,6 +118,12 @@ export function resolveTaskDescriptor(handoff) {
     const crop = meta.cropName || "";
     const stage = meta.stage || "";
     detail = crop && stage ? `${crop} (${stage})` : crop || stage || handoff.contextTitle || "";
+  } else if (source === "alerts") {
+    taskName = taskName || "Risk Alert";
+    actionLabel = actionLabel || "Planning action for alert";
+    completedLabel = completedLabel || "Action plan ready";
+    // The alert title is already on the chat message; show the farm here.
+    detail = meta.farm || "";
   } else {
     taskName = taskName || handoff.contextTitle || "Feature Task";
     actionLabel = actionLabel || `Analyzing ${taskName}`;
@@ -136,6 +142,9 @@ export function resolveTaskDescriptor(handoff) {
     const loc = meta.district || meta.state || meta.location;
     if (loc && loc !== "all" && loc !== "Agmarknet") chips.push({ label: loc, type: "location" });
     if (meta.recordsCount) chips.push({ label: `${meta.recordsCount} mandis`, type: "count" });
+  } else if (source === "alerts") {
+    if (meta.category) chips.push({ label: meta.category, type: "condition" });
+    if (meta.severity) chips.push({ label: meta.severity, type: "condition" });
   } else if (source === "crop-plan") {
     if (meta.cropName) chips.push({ label: meta.cropName, type: "crop" });
     if (meta.stage) chips.push({ label: meta.stage, type: "stage" });

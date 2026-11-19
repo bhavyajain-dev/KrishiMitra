@@ -144,6 +144,11 @@ function AlertsPage() {
       actionLabel: "Planning action for alert",
       completedLabel: "Action plan ready",
       contextTitle: `Alert — ${a.title}`.slice(0, 80),
+      metadata: {
+        farm: activeFarm?.name || "",
+        category: CATEGORY_LABELS[a.category] || "Alert",
+        severity: a.severity ? a.severity[0].toUpperCase() + a.severity.slice(1) : "",
+      },
       prompt:
         `I have this ${(CATEGORY_LABELS[a.category] || "risk").toLowerCase()} alert for ${farm}:\n` +
         `"${a.title}": ${a.message || a.detail || ""}\n\n` +

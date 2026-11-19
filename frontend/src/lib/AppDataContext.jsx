@@ -108,16 +108,27 @@ export function AppDataProvider({ children }) {
     }
   }, [token]);
 
+  const retryLoad = () => {
+    setLoadError(null);
+    setIsLoading(true);
+    fetchDashboardData();
+  };
+
   const fetchDashboardData = async () => {
     try {
       // 1. Fetch Me
+      // A sleeping free server can take ~1 minute to answer; give up after
+      // 90 s so the page can offer "Try again" instead of spinning forever.
+      const slowOk = () => (typeof AbortSignal !== "undefined" && AbortSignal.timeout ? AbortSignal.timeout(90000) : undefined);
       const meRes = await fetch(`${API_URL}/auth/me`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
+        signal: slowOk(),
       });
       if (meRes.status === 401) {
         logout();
         return;
       }
+      if (!meRes.ok) throw new Error(`Account request failed (${meRes.status})`);
       const meData = await meRes.json();
       if (meData.user) {
         setUserProfile({
@@ -147,8 +158,10 @@ export function AppDataProvider({ children }) {
 
       // 2. Fetch ALL farms — no more grabbing just farms[0]
       const farmsRes = await fetch(`${API_URL}/farms`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
+        signal: slowOk(),
       });
+      if (!farmsRes.ok) throw new Error(`Farms request failed (${farmsRes.status})`);
       const farmsData = await farmsRes.json();
       // Normalize: Django uses `id`, frontend uses `_id`. Support both.
       const normalizedFarms = (Array.isArray(farmsData) ? farmsData : []).map(f => ({
@@ -261,6 +274,7 @@ export function AppDataProvider({ children }) {
         logout,
         isLoading,
         loadError,
+        retryLoad,
         fetchDashboardData,
         fetchScoped,
         postScoped,
