@@ -1,6 +1,6 @@
 import { currentSeason } from "@/lib/season";
 import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 import {
   LayoutDashboard,
@@ -189,7 +189,12 @@ export function AppShell({ children }) {
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
 
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const { userProfile, activeFarm, openFarmAlerts: alerts = [] } = useAppData();
+  const { userProfile, activeFarm, openFarmAlerts: alerts = [], farms = [], isLoading, loadError, retryLoad } = useAppData();
+  // Until the account's data has arrived (the free server can take up to a
+  // minute to wake), pages would show their "no farm yet" state. Show a
+  // loading or retry screen instead.
+  const waitingForData = isLoading && farms.length === 0;
+  const dataFailed = !isLoading && loadError && farms.length === 0;
   const current =
     [...nav, ...secondaryNav, ...extraTitles].find((n) => pathname === n.to || pathname.startsWith(n.to + "/"))
       ?.label ?? "Dashboard";
@@ -283,7 +288,9 @@ export function AppShell({ children }) {
           </div>
         </header>
 
-        <main className="min-w-0 flex-1 px-4 py-6 lg:px-7">{children}</main>
+        <main className="min-w-0 flex-1 px-4 py-6 lg:px-7">
+          {waitingForData ? <DataLoading /> : dataFailed ? <DataFailed onRetry={retryLoad} /> : children}
+        </main>
       </div>
 
 
@@ -301,6 +308,44 @@ export function PageHeader({ title, subtitle, action, className = "" }) {
         {subtitle && <p className="mt-1 text-sm text-muted-foreground" suppressHydrationWarning>{subtitle}</p>}
       </div>
       {action && <div className="flex flex-wrap items-center gap-2 sm:shrink-0">{action}</div>}
+    </div>
+  );
+}
+
+
+function DataLoading() {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setSlow(true), 5000);
+    return () => clearTimeout(t);
+  }, []);
+  return (
+    <div className="grid min-h-[50vh] place-items-center">
+      <div className="flex max-w-xs flex-col items-center gap-3 text-center text-sm text-muted-foreground">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
+        <span>Loading your farms…</span>
+        {slow && (
+          <span className="text-xs">The server is waking up. This can take up to a minute on the first visit.</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DataFailed({ onRetry }) {
+  return (
+    <div className="grid min-h-[50vh] place-items-center">
+      <div className="flex max-w-xs flex-col items-center gap-3 text-center text-sm">
+        <p className="font-semibold">Couldn't load your farm data</p>
+        <p className="text-xs text-muted-foreground">The server didn't respond. Check your internet connection and try again.</p>
+        <button
+          type="button"
+          onClick={onRetry}
+          className="rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground cursor-pointer"
+        >
+          Try again
+        </button>
+      </div>
     </div>
   );
 }

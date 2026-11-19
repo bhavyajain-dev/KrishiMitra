@@ -1601,9 +1601,9 @@ def _farmer_context(user, farm_id=None, weather=None):
         for plan in CropPlan.objects.filter(owner=user, farm=f, status='active').order_by('-created_at')[:2]:
             sow = timezone.localtime(plan.sowingDate).date()
             harvest = timezone.localtime(plan.expectedHarvestDate).date()
-            day = (today - sow).days
-            when = (f"day {day} of about {(harvest - sow).days}" if day >= 0
-                    else f"sowing planned in {-day} days")
+            day = (today - sow).days + 1  # sowing day is day 1, as in the app
+            when = (f"day {day} of about {(harvest - sow).days}" if day >= 1
+                    else f"sowing planned in {1 - day} days")
             lines.append(f"  Active crop plan: {plan.cropName} ({plan.season}) on {plan.areaAcres:g} acres, "
                          f"sown {sow:%d %b %Y}, {when}, expected harvest {harvest:%d %b %Y}.")
     if isinstance(weather, dict):

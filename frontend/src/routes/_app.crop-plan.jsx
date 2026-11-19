@@ -566,8 +566,9 @@ function CropPlanPage() {
 
   const done = cropStages.filter((s) => s.status === "done").length;
   const activeStage = cropStages.find((s) => s.status === "active");
+  // Sowing day is day 1 (same count as the dashboard and AI Mitra).
   const currentDay = activePlan?.sowingDate
-    ? Math.max(0, Math.round((new Date() - new Date(activePlan.sowingDate)) / (24 * 60 * 60 * 1000)))
+    ? Math.max(0, Math.floor((new Date() - new Date(activePlan.sowingDate)) / (24 * 60 * 60 * 1000)) + 1)
     : 0;
   const planMilestones = cropStages.slice(0, 4).map((s, i) => ({
     label: s.stage,
