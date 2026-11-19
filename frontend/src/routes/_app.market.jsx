@@ -212,7 +212,8 @@ function MarketPage() {
     return new Date(b.parsedDate || 0) - new Date(a.parsedDate || 0);
   });
 
-  const filteredCropsList = allCommodities.filter(c => c.toLowerCase().includes(cropSearchQuery.toLowerCase()));
+  const cropNeedle = cropSearchQuery.trim().toLowerCase();
+  const filteredCropsList = allCommodities.filter(c => c.toLowerCase().includes(cropNeedle));
 
   // Summary stats for the currently selected crop across visible rows —
   // gives an at-a-glance read before scanning the full table.

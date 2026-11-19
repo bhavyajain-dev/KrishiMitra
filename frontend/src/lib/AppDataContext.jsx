@@ -36,7 +36,11 @@ export function AppDataProvider({ children }) {
     return null;
   });
 
-  const [weatherSnapshot, setWeatherSnapshot] = useState(null); // set by _app.weather.jsx when it fetches live data
+  // Live weather for the farm being viewed. Set by the dashboard and the
+  // Weather page; stamped with the farm (and its coordinates) it belongs to,
+  // so switching farms or editing a farm's location never shows another
+  // place's weather on the dashboard or in AI Mitra.
+  const [weatherSnapshotRaw, setWeatherSnapshotRaw] = useState(null);
   const [alerts, setAlerts] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -48,7 +52,7 @@ export function AppDataProvider({ children }) {
     setUserLocationState(null);
     setFarms([]);
     setActiveFarmId(null);
-    setWeatherSnapshot(null);
+    setWeatherSnapshotRaw(null);
     setAlerts([]);
     setNotifications([]);
 
@@ -62,6 +66,25 @@ export function AppDataProvider({ children }) {
   // if nothing is selected yet (e.g. right after login).
   // Support both Django integer `id` and MongoDB `_id`
   const activeFarm = farms.find((f) => String(f._id) === String(activeFarmId) || String(f.id) === String(activeFarmId)) || farms[0] || null;
+
+  // Alerts for the farm being viewed (plus any not tied to a farm), and the
+  // ones still open. Badges and counts use the open ones only.
+  const viewingFarmKey = activeFarm ? String(activeFarm._id || activeFarm.id) : null;
+  const farmAlerts = alerts.filter((a) => a.farm == null || String(a.farm) === viewingFarmKey);
+  const openFarmAlerts = farmAlerts.filter((a) => (a.status || "active") === "active");
+
+  const activeFarmWeatherKey = activeFarm
+    ? `${activeFarm._id || activeFarm.id}|${activeFarm.location?.lat ?? ""}|${activeFarm.location?.lon ?? ""}`
+    : null;
+  const weatherSnapshot =
+    weatherSnapshotRaw && activeFarmWeatherKey && weatherSnapshotRaw.farmKey === activeFarmWeatherKey
+      ? weatherSnapshotRaw
+      : null;
+  // Callers pass only weather for the viewing farm's own location.
+  const setWeatherSnapshot = useCallback(
+    (snap) => setWeatherSnapshotRaw(snap ? { ...snap, farmKey: activeFarmWeatherKey } : null),
+    [activeFarmWeatherKey]
+  );
 
   // Persist the selection so it survives a refresh
   useEffect(() => {
@@ -227,6 +250,8 @@ export function AppDataProvider({ children }) {
 
         weatherSnapshot,
         setWeatherSnapshot,
+        farmAlerts,
+        openFarmAlerts,
         alerts,
         setAlerts,
         notifications,

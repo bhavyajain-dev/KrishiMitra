@@ -1442,3 +1442,44 @@ class NoEmbeddingModelInRequestsTests(TestCase):
         self.assertTrue(all(col == "disease_treatments_kb" for _t, col, _m in hits))
         res = APIClient().post("/api/retrieve", {"query": "wheat irrigation", "n_results": 3}, format="json")
         self.assertEqual(res.status_code, 200)
+
+
+class SeasonAndCropNameTests(TestCase):
+    """Recommendations must only offer crops sown in the chosen season, with
+    readable names and a fertilizer plan for bracketed names."""
+
+    def _recommend(self, season):
+        with patch("krishi_core.services.ai_engine.llm_service.llm_service.generate_response", return_value={"error": "offline in tests"}):
+            return APIClient().post("/api/soil_recommend", {
+                "ph": 6.5, "nitrogen": 300, "season": season, "areaAcres": 2,
+                "latitude": None, "longitude": None, "state": None, "address": "zzqx nowhere",
+            }, format="json")
+
+    def test_rabi_offers_no_kharif_crops(self):
+        from krishi_core.utils import CROPS
+        kharif = {c["name"] for c in CROPS if c["season"] == "kharif"}
+        res = self._recommend("rabi")
+        self.assertEqual(res.status_code, 200)
+        names = {r["cropName"] for r in res.data["recommendations"]}
+        self.assertTrue(names)
+        self.assertFalse(names & kharif, f"Kharif crops offered in Rabi: {names & kharif}")
+
+    def test_season_with_no_listed_crops_still_answers(self):
+        res = self._recommend("zaid")
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res.data["recommendations"])
+
+    def test_bracketed_crop_gets_fertilizer_plan(self):
+        res = self._recommend("rabi")
+        chana = next(r for r in res.data["recommendations"] if r["cropName"].startswith("Chickpea"))
+        fert = chana.get("suggestedFertilizer")
+        self.assertFalse(isinstance(fert, str) and fert.startswith("N/A"), fert)
+
+    def test_pretty_crop_names(self):
+        from krishi_core.services.crop_profile import pretty_crop_name, crop_reason
+        self.assertEqual(pretty_crop_name("ChickPea"), "Chickpea")
+        self.assertEqual(pretty_crop_name("MungBean"), "Mung bean")
+        self.assertEqual(pretty_crop_name("Rice (Paddy)"), "Rice (Paddy)")
+        reason = crop_reason("chickpea", 6.5)
+        if reason:
+            self.assertNotIn("ChickPea", reason)

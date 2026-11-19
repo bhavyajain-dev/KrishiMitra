@@ -1,3 +1,4 @@
+import { severeWeatherAlert, alreadyRaisedToday } from "@/lib/farmWeather";
 import { API_URL, fetchWeather } from "@/lib/api";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect, useRef } from "react";
@@ -248,7 +249,7 @@ function LocationCard({ name, temp, condition, rain, active, onClick, onRemove }
 
 function WeatherPage() {
   const navigate = useNavigate();
-  const { token, activeFarm, userLocation, setWeatherSnapshot, postScoped, alerts, fetchDashboardData } = useAppData();
+  const { token, activeFarm, userLocation, setWeatherSnapshot, postScoped, farmAlerts: alerts, fetchDashboardData } = useAppData();
 
   const [locations, setLocations] = useState([]);
   const [locationData, setLocationData] = useState({});
@@ -464,6 +465,17 @@ function WeatherPage() {
   // Only render weather that has every part the page draws; anything else
   // (e.g. an old cache entry in another format) counts as not loaded yet.
   const active = isUsableWeather(locationData[activeId]) ? locationData[activeId] : null;
+  // Is the place being shown the viewing farm's own location? Only then may
+  // its weather feed the dashboard, AI Mitra and the farm's alerts.
+  const activeLoc = locations.find((l) => l.id === activeId);
+  const farmLat = activeFarm?.location?.lat;
+  const farmLon = activeFarm?.location?.lon;
+  const shownLat = activeLoc?.lat ?? active?.lat;
+  const shownLon = activeLoc?.lon ?? active?.lon;
+  const showingFarmPlace = Boolean(
+    farmLat != null && farmLon != null && shownLat != null && shownLon != null &&
+    Math.abs(shownLat - farmLat) < 0.05 && Math.abs(shownLon - farmLon) < 0.05
+  );
   const activeError = locationErrors[activeId];
   const hour = new Date().getHours();
 
@@ -471,7 +483,7 @@ function WeatherPage() {
   // dashboard weather widget and the AI Mitra chatbot both see live data
   // instead of staying stuck on "--" / falling back to a separate server call.
   useEffect(() => {
-    if (!active?.current) return;
+    if (!active?.current || !showingFarmPlace) return;
     setWeatherSnapshot({
       temp: active.current.temp,
       humidity: active.current.humidity,
@@ -482,47 +494,20 @@ function WeatherPage() {
       condition: getSkyStyle(active.current.rainChance, active.current.temp, active.current.wind, new Date().getHours()).label,
       cityName: active.cityName,
     });
-  }, [active]);
+  }, [active, showingFarmPlace, setWeatherSnapshot]);
 
   // Raise a Risk Alert automatically for the farm's own location when
   // conditions are severe, so weather risk shows up in Alerts too — not
   // just on this page. Guarded so it only fires once per day per condition.
   useEffect(() => {
     if (!active?.current || !activeFarm) return;
-    const isFarmLocation = locations[0]?.id === activeId || active.cityName === activeFarm.location?.address;
-    if (!isFarmLocation) return;
+    if (!showingFarmPlace) return;
 
-    const { rainChance, wind, temp } = active.current;
-    let severity = null, title = "", message = "";
-    if (rainChance >= 80) {
-      severity = "warning";
-      title = "Heavy rain expected";
-      message = `${rainChance}% chance of rain today near ${active.cityName}. Consider delaying spraying/irrigation and check drainage.`;
-    } else if (wind >= 35) {
-      severity = "warning";
-      title = "High wind advisory";
-      message = `Winds around ${wind} km/h expected near ${active.cityName}. Avoid spraying and secure loose structures/equipment.`;
-    } else if (temp >= 42) {
-      severity = "critical";
-      title = "Extreme heat warning";
-      message = `Temperature near ${temp}°C expected at ${active.cityName}. Increase irrigation frequency and protect young/sensitive crops.`;
-    }
-    if (!severity) return;
+    const raised = severeWeatherAlert(active.current, active.cityName);
+    if (!raised || alreadyRaisedToday(alerts, raised.title)) return;
 
-    const alreadyRaised = alerts?.some(
-      (a) => a.category === "weather" && a.status === "active" && a.title === title &&
-        new Date(a.createdAt || a.created_at).toDateString() === new Date().toDateString()
-    );
-    if (alreadyRaised) return;
-
-    postScoped("/alerts", {
-      category: "weather",
-      severity,
-      riskScorePct: severity === "critical" ? 85 : 60,
-      title,
-      message,
-    }).then(() => fetchDashboardData?.());
-  }, [active, activeFarm]);
+    postScoped("/alerts", { category: "weather", ...raised }).then(() => fetchDashboardData?.());
+  }, [active, activeFarm, showingFarmPlace]);
   const sky = active ? getSkyStyle(active.current.rainChance, active.current.temp, active.current.wind, hour) : getSkyStyle(20, 28, 10, hour);
   const activeMeta = locationMeta[activeId];
 

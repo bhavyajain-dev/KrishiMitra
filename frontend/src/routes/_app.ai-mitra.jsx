@@ -495,9 +495,37 @@ function DiseaseScanner({ token }) {
     return () => el.removeEventListener("paste", onPaste);
   }, [onPaste]);
 
+  const { activeFarm, postScoped, fetchDashboardData } = useAppData();
+  const [alertSaved, setAlertSaved] = useState(false);
+  const [savingAlert, setSavingAlert] = useState(false);
+  // The farmer decides whether the photo is from this farm; nothing is saved
+  // automatically.
+  const saveAsAlert = async () => {
+    if (!result || !activeFarm || savingAlert) return;
+    setSavingAlert(true);
+    try {
+      const crop = result.crop && !["Crop", "None", "Uncertain"].includes(result.crop) ? `${result.crop}: ` : "";
+      const res = await postScoped("/alerts", {
+        category: "crop_health",
+        severity: "warning",
+        riskScorePct: result.confidence > 0 ? Math.round(result.confidence * 100) : null,
+        title: `${crop}${result.disease || "Disease detected"}`.slice(0, 255),
+        message: (result.treatment || result.symptoms || "Disease spotted in a leaf photo. Inspect the crop.").slice(0, 4000),
+      });
+      if (!res || res.error || !res._id) throw new Error("save failed");
+      setAlertSaved(true);
+      fetchDashboardData?.();
+      toast.success(`Added to Risk Alerts for ${activeFarm.name}`);
+    } catch {
+      toast.error("Couldn't save the alert. Please try again.");
+    } finally {
+      setSavingAlert(false);
+    }
+  };
+
   const analyze = async () => {
     if (!file) return;
-    setLoading(true); setError(null); setResult(null);
+    setLoading(true); setError(null); setResult(null); setAlertSaved(false);
     const form = new FormData();
     form.append("image", file);
     try {
@@ -672,6 +700,20 @@ function DiseaseScanner({ token }) {
                 <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" /> Preventive Measures
               </h4>
               <p className="text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap">{result.preventive_measures}</p>
+            </div>
+          )}
+
+          {result.status === "diseased" && activeFarm && (
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-surface-2 p-4">
+              <p className="text-xs text-muted-foreground">Is this from {activeFarm.name}? Track it in Risk Alerts.</p>
+              <button
+                type="button"
+                onClick={saveAsAlert}
+                disabled={alertSaved || savingAlert}
+                className="rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-60 cursor-pointer"
+              >
+                {alertSaved ? "Added to Risk Alerts ✓" : savingAlert ? "Saving…" : "Add to Risk Alerts"}
+              </button>
             </div>
           )}
 

@@ -91,7 +91,7 @@ function ExpensesPage() {
           Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({
-          label: formData.label,
+          label: formData.label.trim(),
           category: formData.category,
           amountRs: Number(formData.amountRs),
           ...(activeFarmId ? { farm: activeFarmId } : {})
@@ -189,6 +189,7 @@ function ExpensesPage() {
                   value={formData.label}
                   onChange={(e) => { setFormData({ ...formData, label: e.target.value }); if (expenseErrors.label) setExpenseErrors(p => ({...p, label: ""})); }}
                   placeholder="What did you spend on?"
+                  maxLength={255}
                   className={`w-full rounded-lg border bg-secondary/40 px-3 py-2 text-xs outline-none focus:border-primary/50 ${expenseErrors.label ? "border-destructive" : "border-input"}`}
                 />
                 {expenseErrors.label && <p className="mt-1 flex items-center gap-1 text-[11px] text-destructive leading-tight"><AlertCircle className="h-3 w-3 shrink-0" /><span>{expenseErrors.label}</span></p>}

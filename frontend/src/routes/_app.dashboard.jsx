@@ -1,4 +1,5 @@
-import { API_URL, fetchWeather } from "@/lib/api";
+import { API_URL } from "@/lib/api";
+import { fetchFarmWeatherSnapshot, farmHasCoords as hasCoords } from "@/lib/farmWeather";
 import { currentSeason } from "@/lib/season";
 import { Link, createFileRoute } from "@tanstack/react-router";
 import {
@@ -38,7 +39,7 @@ const severityStyles = {
 
 
 function Dashboard() {
-  const { token, userProfile, farms, activeFarm, weatherSnapshot, setWeatherSnapshot, fetchScoped, alerts = [] } = useAppData();
+  const { token, userProfile, farms, activeFarm, weatherSnapshot, setWeatherSnapshot, fetchScoped, openFarmAlerts: alerts = [] } = useAppData();
 
   const [cropPlan, setCropPlan] = useState(null);
 
@@ -54,36 +55,27 @@ function Dashboard() {
 
   // Pre-load weather from the backend DB cache on mount so the weather widget
   // shows real data even without the user ever visiting the Weather page.
+  // "loading" | "ready" | "no-location" (address not found on the map) |
+  // "unavailable" (forecast service could not be reached).
+  const [weatherStatus, setWeatherStatus] = useState("loading");
+  const farmHasCoords = hasCoords(activeFarm);
   useEffect(() => {
-    if (!token || weatherSnapshot || !activeFarm?.location?.address) return;
-    
+    if (weatherSnapshot) { setWeatherStatus("ready"); return; }
+    if (!token || !activeFarm) return;
+    if (!farmHasCoords) { setWeatherStatus("no-location"); return; }
+    setWeatherStatus("loading");
+    let cancelled = false;
+
     const locationKey = activeFarm.location.address
       .toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 
     const fetchLiveWeather = async () => {
       try {
-        const { lat, lon, address } = activeFarm.location;
-        if (lat == null || lon == null) return;
-        const res = await fetchWeather(lat, lon, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        if (!res.ok) return;
-        const data = await res.json();
-        const current = {
-          temp: data.current?.temperature != null ? Math.round(data.current.temperature) : null,
-          humidity: data.current?.humidity ?? null,
-          wind: data.current?.wind_speed != null ? Math.round(data.current.wind_speed) : null,
-          uv: data.daily_forecast?.[0]?.uv_index_max ?? null,
-          rainChance: data.daily_forecast?.[0]?.precipitation_probability_max ?? null,
-          todayRainMm: data.current?.precipitation ?? 0,
-          condition: address,
-          cityName: address,
-          alerts: data.alerts || []
-        };
-        setWeatherSnapshot(current);
+        const snap = await fetchFarmWeatherSnapshot(activeFarm, token);
+        if (!cancelled) setWeatherSnapshot(snap);
         // Not saved to the shared weather cache: that cache holds the Weather
         // page's format, and writing the raw API format here broke that page.
-      } catch (e) { console.error("Dashboard live weather fetch failed", e); }
+      } catch (e) { if (!cancelled) setWeatherStatus("unavailable"); }
     };
 
     fetch(`${API_URL}/weather/cache/${locationKey}?query=${encodeURIComponent(activeFarm.location.address)}`, {
@@ -91,8 +83,11 @@ function Dashboard() {
     })
       .then(r => r.ok ? r.json() : null)
       .then(cached => {
+        if (cancelled) return;
         // Use the cache only if it's in the Weather page's format.
-        if (cached?.data?.current && cached.data.current.temp != null && Array.isArray(cached.data.daily)) {
+        const near = (a, b) => a == null || b == null || Math.abs(Number(a) - Number(b)) < 0.05;
+        if (cached?.data?.current && cached.data.current.temp != null && Array.isArray(cached.data.daily) &&
+            near(cached.lat, activeFarm.location.lat) && near(cached.lon, activeFarm.location.lon)) {
           setWeatherSnapshot({
             temp: cached.data.current.temp,
             humidity: cached.data.current.humidity,
@@ -100,7 +95,7 @@ function Dashboard() {
             uv: cached.data.current.uv,
             rainChance: cached.data.current.rainChance,
             todayRainMm: cached.data.current.precipitation,
-            condition: cached.cityName,
+            condition: null,
             cityName: cached.cityName,
             alerts: cached.data.alerts || [],
           });
@@ -109,8 +104,9 @@ function Dashboard() {
           fetchLiveWeather();
         }
       })
-      .catch(() => { fetchLiveWeather(); });
-  }, [token, activeFarm, weatherSnapshot]);
+      .catch(() => { if (!cancelled) fetchLiveWeather(); });
+    return () => { cancelled = true; };
+  }, [token, activeFarm, weatherSnapshot, farmHasCoords, setWeatherSnapshot]);
 
   const totalArea = farms.reduce((s, f) => s + (f.areaAcres || 0), 0);
   // This season's spend on the farm being viewed (real expenses only).
@@ -166,9 +162,13 @@ function Dashboard() {
     !hasWeather
       ? {
           title: "Weather-based advice",
-          body: activeFarm
-            ? "Loading live weather for your farm. Spraying and irrigation timing will appear here."
-            : "Add a farm with its location to get spraying and irrigation advice based on live weather.",
+          body: !activeFarm
+            ? "Add a farm with its location to get spraying and irrigation advice based on live weather."
+            : weatherStatus === "no-location"
+            ? `We couldn't find "${activeFarm.location?.address || "your farm"}" on the map, so there is no forecast. Edit the farm's location on the Farms page to get spraying and irrigation advice.`
+            : weatherStatus === "unavailable"
+            ? "The weather service could not be reached just now. Open the Weather page or try again in a few minutes."
+            : "Loading live weather for your farm. Spraying and irrigation timing will appear here.",
           tone: "text-muted-foreground",
         }
       : rainChance > 60
@@ -176,7 +176,7 @@ function Dashboard() {
       : { title: "Good spraying window ahead", body: `Rain chance is only ${rainChance}%. This is a good window for micronutrient or pesticide spraying operations.`, tone: "text-primary" },
     humidity > 80
       ? { title: "High humidity risk", body: `Humidity at ${humidity}% — ideal conditions for fungal disease. Inspect leaves and consider preventive fungicide application.`, tone: "text-warning" }
-      : { title: "Irrigation efficiency tip", body: activeFarm ? `Your ${activeFarm.name} farm: schedule irrigation in early morning to reduce evaporation losses by up to 30%.` : "Schedule irrigation in early morning to reduce evaporation losses by up to 30%.", tone: "text-cyan" },
+      : { title: "Irrigation efficiency tip", body: `${activeFarm ? `${activeFarm.name}: i` : "I"}rrigate in the early morning, when less water is lost to evaporation than in the heat of the day.`, tone: "text-cyan" },
     { title: "Market timing signal", body: "Check the Market Prices page for today's Mandi rates and compare with your expected harvest value to plan selling strategy.", tone: "text-primary" },
   ];
 
@@ -203,7 +203,7 @@ function Dashboard() {
             </h1>
             <p className="mt-2 max-w-lg text-sm text-muted-foreground">
               {activeFarm
-                ? <>Your <span className="font-semibold text-foreground">{activeFarm.name}</span> farm has {activeFarm.currentCrop ? `${activeFarm.currentCrop} growing` : "no active crop"}. Stay on top of today's tasks to keep the season on track.</>
+                ? <><span className="font-semibold text-foreground">{activeFarm.name}</span> {activeFarm.currentCrop ? `has ${activeFarm.currentCrop} growing. Stay on top of today's tasks to keep the season on track.` : "has no active crop yet. Get crop recommendations or make a crop plan to start the season."}</>
                 : "Welcome back! Add your first farm to get started with your personalized dashboard."}
             </p>
             <div className="mt-5 flex flex-wrap gap-2.5">
@@ -226,7 +226,10 @@ function Dashboard() {
                 <div className="mt-1 flex items-end gap-1">
                   <span className="font-display text-4xl font-bold">{weatherSnapshot?.temp ?? "--"}°</span>
                   <span className="mb-1.5 text-xs text-muted-foreground">
-                    {weatherSnapshot?.condition || "--"}
+                    {weatherSnapshot?.condition ||
+                      (weatherStatus === "no-location" ? "Location not on map"
+                        : weatherStatus === "unavailable" ? "Forecast unavailable"
+                        : weatherStatus === "loading" && activeFarm ? "Loading…" : "")}
                   </span>
                 </div>
               </div>

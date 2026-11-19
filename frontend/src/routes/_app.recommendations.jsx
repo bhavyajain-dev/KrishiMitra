@@ -227,7 +227,7 @@ export function RecommendationsView() {
         title="Crop Recommendations"
         subtitle={
           activeFarm
-            ? `AI agronomic suitability analysis for ${activeFarm.name} (${activeFarm.areaAcres || 1} acres)`
+            ? `AI agronomic suitability analysis for ${activeFarm.name}${activeFarm.areaAcres ? ` (${activeFarm.areaAcres} ${Number(activeFarm.areaAcres) === 1 ? "acre" : "acres"})` : ""}`
             : "AI-powered crop suitability rankings based on soil, climate, and season"
         }
         action={
@@ -396,7 +396,7 @@ export function RecommendationsView() {
                 <div className="mb-4 inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary ring-1 ring-inset ring-primary/20">
                   <Crown className="h-3.5 w-3.5" /> Top Recommendation
                 </div>
-                <h2 className="mb-2 text-3xl font-bold tracking-tight">{primary.cropName}</h2>
+                <h2 className="mb-2 text-3xl font-bold tracking-tight">{primary.displayName || primary.cropName}</h2>
                 <p className="mb-6 max-w-xl text-sm leading-relaxed text-muted-foreground">{primary.reason}</p>
 
                 <div className="flex flex-wrap items-center gap-x-6 gap-y-4">
@@ -410,7 +410,7 @@ export function RecommendationsView() {
                   <div className="space-y-0.5">
                     <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Expected Yield</div>
                     <div className="text-lg font-bold">{Number(primary.expectedYieldKg ?? 0).toLocaleString("en-IN")} kg</div>
-                    <div className="text-[10px] text-muted-foreground">{activeFarm?.areaAcres || 1} acre(s)</div>
+                    <div className="text-[10px] text-muted-foreground">{(() => { const a = Number(activeFarm?.areaAcres) || 2; return `for ${a} ${a === 1 ? "acre" : "acres"}`; })()}</div>
                   </div>
                   <div className="space-y-0.5">
                     <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Est. Profit</div>
@@ -483,7 +483,7 @@ export function RecommendationsView() {
                     className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground transition-all hover:bg-primary/90 hover:shadow-md hover:shadow-primary/20"
                   >
                     <Sprout className="h-4 w-4" />
-                    Create Crop Plan for {primary.cropName}
+                    Create Crop Plan for {primary.displayName || primary.cropName}
                   </Link>
                 </div>
               </div>
@@ -499,7 +499,7 @@ export function RecommendationsView() {
                   <div key={crop.cropName} className="glass group relative overflow-hidden rounded-2xl p-5 transition-all hover:bg-card/60 hover:shadow-md">
                     <div className="mb-3 flex items-start justify-between">
                       <div>
-                        <h3 className="font-bold">{crop.cropName}</h3>
+                        <h3 className="font-bold">{crop.displayName || crop.cropName}</h3>
                         <div className="mt-0.5 text-[11px] text-muted-foreground">
                           Confidence: <span className="font-semibold text-foreground">{crop.suitabilityScore}%</span>
                         </div>
